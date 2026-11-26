@@ -43,6 +43,14 @@
 #define RS64_HR_REPLY_RING 0x80B20000u
 #define RS64_HR_REPLY_RING_END 0x80B20600u
 
+// Per-frame draw queue, moved from 0x80116400 with room for 2048 12-byte entries (the lui 0x80B2 instruction patches in rogue_squadron.toml).
+#define RS64_HR_DRAW_QUEUE 0x80B21000u
+#define RS64_HR_DRAW_QUEUE_END 0x80B27000u
+
+// Per-frame scene node list, moved from 0x8010E090 with room for 4096 entries (the lui 0x80B2 + 0x7000 instruction patches in rogue_squadron.toml).
+#define RS64_HR_NODE_LIST 0x80B27000u
+#define RS64_HR_NODE_LIST_END 0x80B2B000u
+
 // Co-op mod: relocated per-player ranges (kMovedRanges in mp_core.h, delta 0x00A00000).
 #define RS64_HR_COOP_MOVED_A 0x80B38058u
 #define RS64_HR_COOP_MOVED_A_END 0x80B39020u
@@ -91,9 +99,17 @@
 #define RS64_HR_PAINT_NAME 0x80C42400u
 #define RS64_HR_PAINT_NAME_END 0x80C42440u
 
+// The camera a mod's replace line plays in place of the mission script's (camera_shots.txt); the game keeps the pointer.
+#define RS64_HR_SHOT_SWAP 0x80C42440u
+#define RS64_HR_SHOT_SWAP_END 0x80C42540u
+
 // Front-end menu snapshot, moved from D_800CE830 so gCurrentMenuData can grow to 12 rows (menu_rows.toml).
 #define RS64_HR_MENU_SNAPSHOT 0x80C42800u
 #define RS64_HR_MENU_SNAPSHOT_END 0x80C42A00u
+
+// The object matrix the render-side box cull hands the game's projectModelBoundsToScreen.
+#define RS64_HR_BOX_MATRIX 0x80C42A00u
+#define RS64_HR_BOX_MATRIX_END 0x80C42A40u
 
 // Pause menu GAME SETTINGS, mod-page and root arrays.
 #define RS64_HR_PAUSE_MENU 0x80C43000u
@@ -121,7 +137,9 @@ RS64_HR_ORDERED(TERRAIN_EDIT, FAR_MTX);
 RS64_HR_ORDERED(FAR_MTX, STANDINS);
 RS64_HR_ORDERED(STANDINS, TGRID);
 RS64_HR_ORDERED(TGRID, REPLY_RING);
-RS64_HR_ORDERED(REPLY_RING, COOP_MOVED_A);
+RS64_HR_ORDERED(REPLY_RING, DRAW_QUEUE);
+RS64_HR_ORDERED(DRAW_QUEUE, NODE_LIST);
+RS64_HR_ORDERED(NODE_LIST, COOP_MOVED_A);
 RS64_HR_ORDERED(COOP_MOVED_A, COOP_SCRATCH);
 RS64_HR_ORDERED(COOP_SCRATCH, COOP_MOVED_B);
 RS64_HR_ORDERED(COOP_MOVED_B, FACE_LIST);
@@ -137,8 +155,10 @@ RS64_HR_ORDERED(OBJECTIVE_TEXT, OBJECTIVE_CAMS);
 RS64_HR_ORDERED(OBJECTIVE_CAMS, RULE_NAME);
 RS64_HR_ORDERED(RULE_NAME, PACKAGE_NAME);
 RS64_HR_ORDERED(PACKAGE_NAME, PAINT_NAME);
-RS64_HR_ORDERED(PAINT_NAME, MENU_SNAPSHOT);
-RS64_HR_ORDERED(MENU_SNAPSHOT, PAUSE_MENU);
+RS64_HR_ORDERED(PAINT_NAME, SHOT_SWAP);
+RS64_HR_ORDERED(SHOT_SWAP, MENU_SNAPSHOT);
+RS64_HR_ORDERED(MENU_SNAPSHOT, BOX_MATRIX);
+RS64_HR_ORDERED(BOX_MATRIX, PAUSE_MENU);
 RS64_HR_ORDERED(PAUSE_MENU, LANG);
 RS64_HR_ORDERED(LANG, TEX_POOL_A);
 static_assert(RS64_HR_TEX_POOL_A < RS64_HR_TEX_POOL_A_END, "host RAM map ends below its last range");

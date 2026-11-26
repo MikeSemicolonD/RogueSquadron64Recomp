@@ -8,7 +8,7 @@
 let rulesPanelDir = null;
 let lookPanelDir = null;
 let editMode = null;
-let lastEditMode = 'terrain';
+let lastEditMode = 'objects';
 let editTool = 'translate';
 let sel = null;
 let placing = null;
@@ -36,10 +36,12 @@ gizmo.addEventListener('mouseUp', onTrackGizmoUp);
 gizmo.addEventListener('mouseUp', onCrawlGizmoUp);
 gizmo.addEventListener('objectChange', onCrawlGizmoMove);
 
-// The gizmo also draws an unconnected arrowhead / box on each axis's negative side; keep only the ones on a line.
-const gizmoParts = gizmo.getHelper().children.find((c) => c.gizmo)?.gizmo;
+// The gizmo also draws an unconnected arrowhead / box on each axis's negative side; keep only the ones on a line. Their invisible pickers
+// go too, or a click on whatever sits on that side of the axis grabs the gizmo instead.
+const gizmoRoot = gizmo.getHelper().children.find((c) => c.gizmo);
+const gizmoParts = gizmoRoot?.gizmo;
 
-for (const g of [gizmoParts?.translate, gizmoParts?.scale])
+for (const g of [gizmoParts?.translate, gizmoParts?.scale, gizmoRoot?.picker?.translate, gizmoRoot?.picker?.scale])
   for (const h of [...(g?.children ?? [])])
   {
     const a = { X: 'x', Y: 'y', Z: 'z' }[h.name];
@@ -154,12 +156,55 @@ const editItemOf = (o) => o.userData.placedItem ?? (o.parent?.name === 'markers'
 
 // Each mode clicks and hovers only what it edits: Objects = placed objects plus object markers (starts, cameras), Events = the other markers. Terrain and other kinds never get in the way.
 // A box marks the hovered item and the selection. Objects mode = placed models; Events mode = every legend marker (spawns, restarts and cameras included).
-const editTargets = () => editMode === 'objects'
-  ? root.children.filter((o) => o.userData.placedItem && o.visible)
-  : visibleMarkers();
+const editTargetsFor = (mode) => (mode === 'objects' ? root.children.filter((o) => o.userData.placedItem && o.visible) : visibleMarkers());
+const editTargets = () => editTargetsFor(editMode);
+
+// Everything editable under the cursor in both edit modes, nearest first, each with the mode it is edited in (ground in front hides it).
+function editHitsAll(e)
+{
+  const ground = groundDistance(e);
+  const found = [];
+
+  pick(e, []);
+
+  for (const mode of ['objects', 'events'])
+    for (const h of raycaster.intersectObjects(editTargetsFor(mode), true))
+    {
+      let o = h.object;
+      let shown = h.distance <= ground + GROUND_SLACK;
+
+      for (let p = o; p; p = p.parent)
+        if (!p.visible)
+          shown = false;
+
+      while (o && !editItemOf(o))
+        o = o.parent;
+
+      const one = o && musicOuter(o);
+
+      if (shown && one && !found.some((x) => x.o === one))
+        found.push({ o: one, mode, at: h.distance });
+    }
+
+  return found.sort((a, b) => a.at - b.at);
+}
+
+// How far along the cursor's ray the ground is (Infinity with no terrain); a marker past it is hidden by the ground and is not picked.
+// Markers sit on or just under the ground (draped rings), hence the small allowance.
+const GROUND_SLACK = 0.5;
+
+function groundDistance(e)
+{
+  const terrain = root?.getObjectByName('terrain');
+  const p = terrain?.visible && terrain.userData.tiles ? terrainRay(e, terrain) : null;
+
+  return p ? terrain.localToWorld(p.clone()).distanceTo(raycaster.ray.origin) : Infinity;
+}
 
 function editHit(e) {
-  let o = root && pick(e, editTargets())?.object;
+  const ground = root ? groundDistance(e) : Infinity;
+  const h = root && pick(e, editTargets());
+  let o = h && h.distance <= ground + GROUND_SLACK ? h.object : null;
 
   while (o && !editItemOf(o))
     o = o.parent;
@@ -172,28 +217,19 @@ function editHit(e) {
 function editPickList(e)
 {
   if (editMode !== 'objects' && editMode !== 'events')
-    return false;
+    return null;
 
-  pick(e, []);
+  // Both edit modes' things, so one list reaches all of them; picking one in the other mode switches to it.
+  const hits = editHitsAll(e);
+  const found = hits.map((h) => h.o);
+  const modeOf = new Map(hits.map((h) => [h.o, h.mode]));
 
-  const found = [];
+  const choose = (o) => {
+    if (modeOf.get(o) !== editMode)
+      setEditMode(modeOf.get(o));
 
-  for (const h of raycaster.intersectObjects(editTargets(), true)) {
-    let o = h.object;
-    let shown = true;
-
-    for (let p = o; p; p = p.parent)
-      if (!p.visible)
-        shown = false;
-
-    while (o && !editItemOf(o))
-      o = o.parent;
-
-    const one = o && musicOuter(o);
-
-    if (shown && one && !found.includes(one))
-      found.push(one);
-  }
+    select(o);
+  };
 
   // A path event lists before its path, and a low detail region after the high one the game would use there.
   const rank = (o) => isLowLod(editItemOf(o)) - !!editItemOf(o).pathEvent;
@@ -202,19 +238,20 @@ function editPickList(e)
 
   $('tip').hidden = true;
 
-  // One item needs no list: select it as a left click would. None just closes any open card.
-  if (found.length < 2) {
-    select(found[0] ?? null);
-
-    return true;
-  }
+  // A right-click only shows a popup, never selects: the list (one row or more), or on bare ground its card.
+  if (!found.length)
+    return null;
 
   const el = $('info');
   const list = elem('div');
 
   el.textContent = '';
   list.className = 'pickList';
-  el.append(elem('b', { className: 'pickHead', textContent: `${found.length} ${editMode === 'objects' ? 'objects' : 'events'} under the cursor` }));
+
+  el.append(elem('b', {
+    className: 'pickHead',
+    textContent: `${found.length} under the cursor`
+  }));
 
   for (const o of found)
   {
@@ -228,9 +265,9 @@ function editPickList(e)
     row.setAttribute('role', 'button');
     row.innerHTML = `<i style="background:#${color.toString(16).padStart(6, '0')}"></i><div>${esc(it.name || it.label || '(unnamed)')}</div><div class="kd">${esc(placed ? o.userData.source?.name ?? 'Object' : TYPES[markerKind(it)]?.label ?? 'Type ' + it.type)}</div>`;
     row.onmouseenter = row.onfocus = () => boxAround(hoverBox, o !== sel?.o && o);
-    row.onmouseleave = row.onblur = () => (hoverBox.visible = false);
-    row.onclick = () => select(o);
-    row.onkeydown = (k) => k.key === 'Enter' && select(o);
+    row.onmouseleave = row.onblur = () => boxAround(hoverBox, null);
+    row.onclick = () => choose(o);
+    row.onkeydown = (k) => k.key === 'Enter' && choose(o);
     list.append(row);
   }
 
@@ -242,7 +279,7 @@ function editPickList(e)
   el.style.top = Math.min(e.clientY - r.top + 12, r.height - 220) + 'px';
   el.hidden = false;
 
-  return true;
+  return 'pick:' + found.map((o) => o.uuid).join();
 }
 
 const hoverBox = new THREE.BoxHelper(new THREE.Object3D(), 0x8ab4ff);
@@ -250,10 +287,23 @@ const selBox = new THREE.BoxHelper(new THREE.Object3D(), 0xe8b84a);
 hoverBox.visible = selBox.visible = false;
 scene.add(hoverBox, selBox);
 
+// A hover or selection outline: a box, or for a trigger ball its gradient fill (kept while the other outline still marks it).
 function boxAround(box, o) {
-  box.visible = !!o;
+  const fill = (o && o.userData.areaFill) || null;
+  const prev = box.userData.fill;
+  const other = box === hoverBox ? selBox : hoverBox;
 
-  if (o) {
+  box.userData.fill = fill;
+
+  if (prev && prev !== fill && prev !== other.userData.fill)
+    prev.visible = false;
+
+  if (fill)
+    fill.visible = true;
+
+  box.visible = !!o && !fill;
+
+  if (o && !fill) {
     o.updateMatrixWorld(true);
     box.setFromObject(o);
   }
@@ -265,7 +315,7 @@ let editHovered = null;
 function editHudRows(o)
 {
   const it = editItemOf(o);
-  const f = (v) => v.map((n) => +n.toFixed(2)).join(', ');
+  const f = (v) => v.map((n) => String(+n.toFixed(2)));
   const placed = !!o.userData.placedItem;
 
   const rows = [
@@ -296,6 +346,13 @@ function editHudRows(o)
 
   if (it.radius > 0)
     rows.push(['radius', +it.radius.toFixed(2)]);
+
+  // The X, Y and Z of position, rotation, scale and size line up in columns (the HUD is monospace).
+  const vecs = rows.filter((r) => Array.isArray(r[1]));
+  const width = [0, 1, 2].map((k) => Math.max(...vecs.map((r) => r[1][k]?.length ?? 0)));
+
+  for (const r of vecs)
+    r[1] = r[1].map((s, k) => s.padStart(width[k])).join(', ');
 
   return rows;
 }
@@ -331,6 +388,10 @@ function editHover(e)
 
 function setEditMode(m)
 {
+  // One object's event window belongs to the mode it was opened in.
+  if (m !== editMode && rulesPanelFocus?.it)
+    $('rulesPanel').hidden = true;
+
   if (m)
     lastEditMode = m;
 
@@ -368,6 +429,9 @@ function setEditMode(m)
     fillAddEnemies();
 
   select(null);
+
+  // Called once while the page loads, before lights.js defines it.
+  window.lightsPanel?.();
 }
 
 $('editTab').onclick = () => setEditMode(editMode ? null : lastEditMode);
@@ -412,9 +476,43 @@ function attachGizmo()
   showCorners();
 }
 
+// A cutscene opened from a level event: Back returns to the level with that object, list and event window as they were.
+async function previewCutscene(path)
+{
+  backTo = null;
+  rememberLevel(true);
+
+  // The cutscene reloads its level, which drops the way back; it is put back once the cutscene is open.
+  const back = backTo;
+
+  await showCutscene(path);
+  backTo = back;
+
+  // The preview plays in the same level, so the way back only needs to say Back.
+  if (back)
+  {
+    $('btnBack').innerHTML = `${iconImg('chevronLeft')} Back`;
+    $('btnBack').title = 'Back to editing, as you left it';
+  }
+
+  syncBackButton();
+}
+
+// The list window shows the level's own events (the globe) instead of the selected object's.
+let levelEventsOn = false;
+
 function select(marker)
 {
   const o = marker && musicOuter(marker);
+
+  // Picking an object leaves the level's list, and the level window opened from it.
+  if (o && levelEventsOn)
+  {
+    levelEventsOn = false;
+
+    if (!rulesPanelFocus?.it)
+      $('rulesPanel').hidden = true;
+  }
 
   // A selection (or clicking empty space) closes the right-click card.
   $('info').hidden = true;
@@ -429,7 +527,12 @@ function select(marker)
 
     // NPCs on a spline start on it whatever their own position says, and path events fire at a fraction along their spline,
     // so both move with the spline instead.
-    sel = { o, it, fixed: o.userData.path ? `. It starts on the spline ${it.model}; move that in Events mode` : null, pathNode: it.pathNodes?.[0] };
+    sel = {
+      o,
+      it,
+      fixed: o.userData.path ? `It starts where its path ${it.model} starts. Move the path in Events mode to move it.` : null,
+      pathNode: it.pathNodes?.[0]
+    };
 
     if (sel.pathNode)
       sel.pathAt = sel.pathNode.s.events[sel.pathNode.k].at;
@@ -447,7 +550,7 @@ function select(marker)
   syncSelPanel();
   attachGizmo();
   boxAround(selBox, sel?.o);
-  hoverBox.visible = false;
+  boxAround(hoverBox, null);
 }
 
 // A zone's gizmo sits at its footprint centre (pos + R * size / 2 over X/Z), so moving, rotating and scaling all pivot there.
@@ -500,8 +603,24 @@ function slidePathEvent(at)
   const tangent = curve.getTangentAt(at);
 
   o.position.copy(curve.getPointAt(at));
-  o.geometry.dispose();
-  o.geometry = beadGeometry(tangent);
+
+  // Turned in place where the bead has its own copy (see drapeZone); the shared untilted bead is swapped instead.
+  const turned = beadGeometry(tangent);
+
+  if (o.geometry !== GEO.bead && turned !== GEO.bead)
+  {
+    for (const k of ['position', 'normal'])
+    {
+      o.geometry.attributes[k]?.array.set(turned.attributes[k].array);
+
+      if (o.geometry.attributes[k])
+        o.geometry.attributes[k].needsUpdate = true;
+    }
+
+    turned.dispose();
+  }
+  else
+    o.geometry = turned;
 
   // The order's other beads stay put and its links keep their far ends.
   for (const c of o.children)
@@ -625,14 +744,21 @@ function showItemChange()
 }
 
 // Redraws a zone's marker over the ground as item says it is now (it may be a preview of an item not yet changed).
+// The new shape is written into the marker's own buffers (same step count as it was built with): a WebGPU mesh or line given a new geometry while shown fails the whole frame.
 function drapeZone(o, item)
 {
-  const fresh = makeMarker(item);
+  const fresh = makeMarker(item, (o.geometry.attributes.position.count - 1) / 4);
 
-  o.geometry.dispose();
-  o.geometry = fresh.geometry;
-  o.children[0].geometry.dispose();
-  o.children[0].geometry = fresh.children[0].geometry;
+  for (const [mine, theirs] of [[o, fresh], [o.children[0], fresh.children[0]]])
+  {
+    const p = mine.geometry.attributes.position;
+
+    p.array.set(theirs.geometry.attributes.position.array);
+    p.needsUpdate = true;
+    mine.geometry.computeBoundingSphere();
+    theirs.geometry.dispose();
+  }
+
   o.position.copy(fresh.position);
 }
 
@@ -807,13 +933,7 @@ function shotLinkRow(it)
     warn();
   });
 
-  const save = async (label) => {
-    const t = await text();
-
-    await editText(SHOT_LINKS, shotLinkSet(t, lv, it.name, pick.value || null, personal.checked), label);
-    preview.disabled = personal.disabled = !pick.value;
-    warn();
-  };
+  const save = (label) => (row.saving = text().then((t) => editText(SHOT_LINKS, shotLinkSet(t, lv, it.name, pick.value || null, personal.checked), label)).then(syncSelPanel));
 
   pick.onchange = () => save(pick.value ? `Camera shot: ${it.name} -> ${pick.value}` : `No camera shot: ${it.name}`);
   personal.onchange = () => save(`Camera shot ${personal.checked ? 'personal' : 'shared'}: ${it.name}`);
@@ -824,10 +944,10 @@ function shotLinkRow(it)
     const cam = cams.find((c) => c.name === pick.value);
 
     if (cam)
-      showCutscene(`seq:${dir}:${cam.index}`);
+      previewCutscene(`seq:${dir}:${cam.index}`);
   };
 
-  row.append('Play camera shot ', pick, preview, personalLabel, note);
+  row.append('Play cutscene ', pick, preview, personalLabel, note);
 
   if (!cams.length)
     Object.assign(pick, { disabled: true, title: 'Add a camera to this level first' });
@@ -839,12 +959,20 @@ function shotLinkRow(it)
 const MOD_LEVELS = 'mod/levels.json';
 let modLevels = [];
 
-// Aliases every mod level's folder and intro/extro onto its template's files (and drops those of removed levels).
-function applyModLevelsText(text)
+// ---- Custom ships (mod/ships.json): new hangar ships that fly as a stock craft, with copies of its exterior model as their own ----
+const MOD_SHIPS = 'mod/ships.json';
+let modShips = [];
+
+// Aliases every mod level's folder and intro/extro, and every ship's model, onto its template's files (and drops those of removed ones).
+function applyModLevelsText(text, shipsText = null)
 {
   modLevels = modLevelsParse(text);
 
-  const want = new Map(modLevels.flatMap((l) => modLevelAliases(l, [...rom.assets.keys()].filter((k) => !rom.aliases.has(k)))));
+  if (shipsText !== null)
+    modShips = shipsParse(shipsText);
+
+  const stock = [...rom.assets.keys()].filter((k) => !rom.aliases.has(k));
+  const want = new Map([...modLevels.flatMap((l) => modLevelAliases(l, stock)), ...modShips.flatMap(shipAliases)]);
 
   for (const p of [...rom.aliases.keys()])
     if (want.get(p) !== rom.aliases.get(p))
@@ -854,7 +982,7 @@ function applyModLevelsText(text)
     rom.alias(p, from);
 }
 
-const applyModLevels = async () => applyModLevelsText(await virtualText(MOD_LEVELS));
+const applyModLevels = async () => applyModLevelsText(await virtualText(MOD_LEVELS), await virtualText(MOD_SHIPS));
 const modLevelOf = (dir) => modLevels.find((l) => dir === 'data/level/' + l.folder);
 
 // The stock level a level directory plays as (its own for a stock level): per-level game data (textures, sky, fog) comes from it.
@@ -2036,7 +2164,7 @@ function destroyRow(it)
   Promise.all([rom.read(dir + '/dat'), virtualText(SHOT_LINKS)]).then(([dv, text]) => {
     const objs = parseDAT(dv).items.filter((x) => x.type === 0 && x.name && !DESTROY_SKIP.has(x.sub)).sort((a, b) => dist(a) - dist(b));
     const names = shotDestroyGet(text, lv, it.name);
-    const save = (next, label) => virtualText(SHOT_LINKS).then((t) => editText(SHOT_LINKS, shotDestroySet(t, lv, it.name, next), label)).then(syncSelPanel);
+    const save = (next, label) => (row.saving = virtualText(SHOT_LINKS).then((t) => editText(SHOT_LINKS, shotDestroySet(t, lv, it.name, next), label)).then(syncSelPanel));
 
     row.append('Destroy ');
 
@@ -2076,11 +2204,27 @@ const wavesPath = (dir) => `explorer/${dir}/waves.json`;
 const readWaves = (dir) => readJson(wavesPath(dir), () => ({}));
 const addWave = (dir, waves, name, flag, label) => writeJson(wavesPath(dir), { ...waves, [name]: flag }, label, 1);
 
-function wavePicker(waves, flag, title)
+// Every wave the level has: the named ones, then each flag units wait for, with a hint of what it spawns ("Flag 54 (Tankdroid_04 + 8 more)").
+function waveChoices(dv, waves)
 {
-  const stock = flag && !Object.values(waves).includes(flag) ? [[flag, `Stock flag ${flag}`]] : [];
+  const named = Object.entries(waves).map(([n, f]) => [f, n]);
+  const have = new Set(named.map(([f]) => f));
 
-  return selectOf([[0, 'None'], ...Object.entries(waves).map(([n, f]) => [f, n]), ...stock, ['new', 'New wave…']], flag, { title });
+  const flags = [...levelFlags(dv)].filter(([f, l]) => !have.has(f) && l.spawns.length).sort(([a], [b]) => a - b).map(([f, l]) => {
+    const n = l.spawns.length;
+
+    return [f, `Flag ${f} (${l.spawns[0].name}${n > 1 ? ` + ${n - 1} more` : ''})`];
+  });
+
+  return [...named, ...flags];
+}
+
+function wavePicker(dv, waves, flag, title)
+{
+  const choices = waveChoices(dv, waves);
+  const stock = flag && !choices.some(([f]) => f === flag) ? [[flag, `Flag ${flag}`]] : [];
+
+  return selectOf([[0, 'None'], ...choices, ...stock, ['new', 'New flag…']], flag, { title });
 }
 
 // The picked wave's flag (0 = none); a new wave asks for its name and is stored. null when cancelled.
@@ -2089,7 +2233,7 @@ async function chooseWave(pick, dir, waves)
   if (pick.value !== 'new')
     return +pick.value;
 
-  const name = prompt('Wave name', `Wave ${Object.keys(waves).length + 1}`)?.trim();
+  const name = prompt('Name the new flag, for example Rebel pilots found', '')?.trim();
 
   if (!name)
     return null;
@@ -2109,17 +2253,18 @@ async function chooseWave(pick, dir, waves)
 }
 
 // Trigger side: entering the area raises the wave's flag (its enter block, +0x38 for 0x18 / +0x48 for 0x19, sets flag = 1).
-function waveTriggerRow(it) {
+function waveTriggerRow(it)
+{
   const dir = selected;
   const row = elem('div', { className: 'shotRow' });
   const base = it.sub === 0x18 ? 0x38 : 0x48;
 
-  readWaves(dir).then((waves) => {
+  Promise.all([readWaves(dir), rom.read(dir + '/dat')]).then(([waves, dv]) => {
     const stock = triggerWave(it.onEnter, waves) === 'stock';
-    const pick = wavePicker(waves, it.onEnter.flag, 'Start a wave: entering this area brings in every enemy waiting for it');
+    const pick = wavePicker(dv, waves, it.onEnter.flag, 'Set a flag: entering this area sets it, and every unit waiting for it spawns');
 
-    pick.onchange = () => historyGroup(`Start wave: ${it.name}`, async () => {
-      if (stock && !confirm(`${it.name} already ${it.onEnter.value ? 'sets' : 'clears'} mission flag ${it.onEnter.flag}, which the level's script may need. Replace that with the wave?`))
+    pick.onchange = () => (row.saving = historyGroup(`Set flag: ${it.name}`, async () => {
+      if (stock && !confirm(`${it.name} already ${it.onEnter.value ? 'sets' : 'clears'} mission flag ${it.onEnter.flag}, which the level's script may need. Replace it with this flag?`))
         return syncSelPanel();
 
       const flag = await chooseWave(pick, dir, waves);
@@ -2144,12 +2289,180 @@ function waveTriggerRow(it) {
       });
 
       await reselect(it.type, it.index);
-    });
+    }));
 
-    row.append('Start wave ', pick);
+    row.append('Set flag ', pick);
   });
 
   return row;
+}
+
+// What entering a trigger area does on its own (its cutscene, what it destroys, the wave or flag it starts), in words; parts are empty when it does none. A stock flag names the units waiting for it.
+// "a, b and c".
+const andList = (l) => (l.length > 1 ? `${l.slice(0, -1).join(', ')} and ${l.at(-1)}` : l[0]);
+
+// One decoded script effect in words (see gen_voice_cats.mjs), or as an -ing form after "keeps the mission from". Cutscenes already listed from the camera table are skipped.
+function scriptEffect(code, cams = [], ing = false)
+{
+  const [kind, arg] = code.split(/:(.*)/);
+  const flagSet = /^f(\d+)=(-?\d+)$/.exec(code);
+  const counter = /^c(\d+)$/.exec(code);
+
+  if (kind === 'cam')
+    return cams.includes(arg) ? null : (ing ? `playing '${arg}'` : `play '${arg}'`);
+
+  if (flagSet)
+    return `${+flagSet[2] ? (ing ? 'setting' : 'set') : (ing ? 'clearing' : 'clear')} flag ${flagSet[1]}`;
+
+  if (counter)
+    return `${ing ? 'adding' : 'add'} to 'counter #${counter[1]}'`;
+
+  const words = {
+    m: ['change the music', 'changing the music'],
+    done: ['complete an objective', 'completing an objective'],
+    obj: ['change the objectives shown', 'changing the objectives shown'],
+    hud: ['change the HUD', 'changing the HUD'],
+    dmg: [`damage '${arg}'`, `damaging '${arg}'`],
+    efx: [`put an effect on '${arg}'`, `putting an effect on '${arg}'`],
+    timer: ['start a timer', 'starting a timer'],
+    sound: ['play a sound', 'playing a sound']
+  }[kind];
+
+  return words ? words[+ing] : null;
+}
+
+// What setting a flag does besides spawning units, from the level's own data: music regions it switches or lets play (their when and gate
+// conditions), path points and trigger areas that wait for it, objective arrows it shows, and the mission script's cutscenes that need it.
+function flagReaders(dir, dv, flag)
+{
+  const items = parseDAT(dv).items;
+  const out = [];
+  const music = items.filter((x) => x.type === 6 && x.sub === 0x10 && dv.getUint32(x.offset + 8) >= 0xA4);
+  const named = (x) => `'${x.name || 'unnamed'}'`;
+
+  for (const m of music)
+  {
+    if (dv.getInt32(m.offset + 0x94) === flag)
+      out.push(`switches music region ${named(m)} to its action song`);
+
+    if (dv.getInt32(m.offset + 0x84) === flag)
+      out.push(`lets music region ${named(m)} play`);
+  }
+
+  const points = items.filter((x) => x.pathEvent?.flag === flag).length;
+  const areas = items.filter((x) => isTriggerArea(x) && x.requires?.flag === flag).map((x) => x.name || 'unnamed');
+  const arrows = items.filter((x) => x.waypoint?.flag === flag).length;
+  const cams = [...new Set((levelScript(dir)?.cameras ?? []).filter((c) => c.needs.some((n) => !n.not && n.flag === flag)).map((c) => c.name))];
+
+  if (points)
+    out.push(`lets ${points} path point${points > 1 ? 's' : ''} act`);
+
+  if (areas.length)
+    out.push(areas.length === 1 ? `lets '${areas[0]}' trigger` : listed('lets these trigger', areas));
+
+  if (arrows)
+    out.push(`shows ${arrows} objective arrow${arrows > 1 ? 's' : ''}`);
+
+  if (cams.length)
+    out.push(listed('lets the mission play', cams));
+
+  // What the stock mission script does with the flag (decoded at build time by gen_voice_cats.mjs; a mod level uses its template's):
+  // effects while it is set read "makes the mission …", effects only while it is clear "keeps the mission from …".
+  const key = modLevelOf(dir) ? 'lv_' + modLevelOf(dir).template.toString(36) : dir.split('/').pop();
+  const tv = globalThis.RS64_TRIGGER_VOICES?.[key];
+  const fx = tv?.fx?.b?.[flag] ?? {};
+  const said = [...new Set([...(tv?.b?.[flag] ?? []), ...(tv?.pb?.[flag]?.[1] ?? [])])].map((v) => voiceLine(v)?.trim()).filter(Boolean);
+  const set = (fx[1] ?? []).map((e) => scriptEffect(e, cams)).filter(Boolean);
+
+  // Different branches can test a flag both ways; an effect on both sides only says what setting the flag does.
+  const clear = (fx[0] ?? []).filter((e) => !(fx[1] ?? []).includes(e)).map((e) => scriptEffect(e, cams, true)).filter(Boolean);
+
+  if (said.length)
+    set.unshift(`say "${said[0]}"${said.length > 1 ? ` (+${said.length - 1} more)` : ''}`);
+
+  if (set.length)
+    out.push(`makes the mission ${andList([...new Set(set)])}`);
+
+  if (clear.length)
+    out.push(`keeps the mission from ${andList([...new Set(clear)])}`);
+
+  if (!cams.length && !set.length && !clear.length && tv?.reads?.includes('b' + flag))
+    out.push('sets off something in the mission script');
+
+  return out;
+}
+
+function enteredParts(dir, dv, it, waves, shots)
+{
+  const lv = dir.split('/').pop();
+  const cam = it.name ? shotLinkGet(shots, lv, it.name)?.camera : null;
+  const gone = it.name ? shotDestroyGet(shots, lv, it.name) : [];
+  const flag = it.onEnter?.value ? it.onEnter.flag : 0;
+  const wave = Object.entries(waves).find(([, f]) => f === flag)?.[0];
+  const waiting = flag ? gateSources(dv).units.filter((u) => unitGate(dv, u.it).flag === flag).map((u) => u.it.name) : [];
+  let starts = null;
+
+  if (wave)
+    starts = `set '${wave}'`;
+  else if (waiting.length)
+    starts = listed('spawn', waiting);
+  else if (flag)
+  {
+    const readers = flagReaders(dir, dv, flag);
+
+    starts = readers.length ? `set flag ${flag}, which ${readers.join(' and ')}` : `set flag ${flag}`;
+  }
+
+  return { cam, gone, flag, parts: [cam && `play '${cam}'`, gone.length && listed('destroy', gone), starts].filter(Boolean) };
+}
+
+// The Level events window on what entering a trigger area does: its cutscene, what it destroys and the wave it starts, all at once.
+// An open one saves each change; a new one (isNew) holds them until Add.
+function enteredEditor(it, isNew)
+{
+  const dir = selected;
+  const box = elem('div', { className: 'levelRules destroyed' }, elem('b', { textContent: `'${it.name || 'this'}' is entered` }));
+
+  Promise.resolve().then(() => {
+    const rows = { shot: shotLinkRow, destroy: destroyRow, wave: waveTriggerRow };
+
+    const add = elem('button', { textContent: 'Add', title: 'Add this level event', disabled: true });
+    const picked = new Map();
+    let go = false;
+
+    // The rows save on change; here a change is held (caught before the row sees it) until Add, then replayed in order, each save awaited.
+    const stage = (row) => {
+      row.addEventListener('change', (e) => {
+        if (go)
+          return;
+
+        e.stopPropagation();
+        picked.set(e.target, row);
+        add.disabled = ![...picked.keys()].some((t) => t.type === 'checkbox' || (t.value && t.value !== '0'));
+      }, true);
+
+      return row;
+    };
+
+    add.onclick = async () => {
+      go = true;
+      rulesPanelFocus = { ...rulesPanelFocus, isNew: false };
+
+      for (const [t, row] of picked)
+      {
+        t.dispatchEvent(new Event('change'));
+        await row.saving;
+      }
+    };
+
+    // Every part shows at once: an open event saves each change, a new one holds them for its Add.
+    if (isNew)
+      return box.append(...Object.values(rows).map((r) => stage(r(it))), add);
+
+    box.append(...Object.values(rows).map((r) => r(it)));
+  });
+
+  return box;
 }
 
 // A stock hold order with no flags that lasts 9999 seconds, the stop at the end of a path for UNITS_OWN_PATH.
@@ -2223,6 +2536,48 @@ function pathAttackRow(it) {
   return label;
 }
 
+// Loop: craft go round the path again (its shape closes and it continues into itself). A loop never reaches the end, so turning it on
+// drops the attack there; turning it off on a path that then leads nowhere offers the attack back, since a craft at a dead end crashes.
+function pathLoopRow(it)
+{
+  const label = elem('label', { className: 'shotPersonal', title: 'Craft flying this path go round it again instead of leaving it at the end' });
+  const box = elem('input', { type: 'checkbox', disabled: true });
+
+  label.append(box, ' Loop');
+
+  rom.read(selected + '/dat').then((dv) => {
+    const blocked = splineLoopBlocked(dv, it);
+
+    box.checked = !!it.loops;
+    box.disabled = !!blocked && !it.loops;
+
+    if (box.disabled)
+      label.title = `Craft always go on to ${blocked} at the end, so they would never loop`;
+  });
+
+  box.onchange = async () => {
+    const tpl = await getAttackTemplate();
+    const find = (b) => parseDAT(dvOf(b)).items.find((x) => x.type === 3 && x.index === it.index);
+    const dv = await rom.read(selected + '/dat');
+    const others = RS64.PATH_LINK_FIELDS.slice(0, 7).some((x) => RS64.nameListGet(dv, it, x).some((n) => n !== it.name));
+    const attack = !box.checked && !others && !splineAttackEnd(u8(dv), it) && confirm('Without the loop this path leads nowhere, and a craft that reaches its end crashes the game unless something sends it off first. Add an attack on the player at the end?');
+
+    await editItem(it, (bytes) => {
+      let out = splineSetLoop(bytes, it, box.checked);
+      const now = find(out);
+
+      if (box.checked && splineAttackEnd(out, now))
+        out = splineSetAttackEnd(out, now, false, tpl);
+      else if (attack)
+        out = splineSetAttackEnd(out, now, true, tpl);
+
+      return out;
+    }, `${box.checked ? 'Loop' : 'No loop'}: ${it.name || 'path'}`);
+  };
+
+  return label;
+}
+
 // Stock paths that waves can fly (named by an enemy of a WAVE_FIELDS kind), from every level, for "Copy from another level".
 let pathCatalog = null;
 
@@ -2260,7 +2615,8 @@ async function getPathCatalog()
 const setPathPoints = (it, points, label) => editItem(it, (bytes) => splineSetPoints(bytes, it, points), `${label}: ${it.name || 'path'}`);
 
 // Adds a path built from stock path src (build = splineCopy or splineNew, starting it at the enemy) and puts the enemy on it.
-async function addPathFor(it, src, build, name, label) {
+async function addPathFor(it, src, build, name, label, heading = null)
+{
   let dropped = 0;
 
   await historyGroup(label, async () => {
@@ -2269,7 +2625,7 @@ async function addPathFor(it, src, build, name, label) {
     const s = parseDAT(new DataView(from.buffer)).items.find((x) => x.type === 3 && x.index === src.index);
 
     await editAsset(selected + '/dat', (bytes) => {
-      const r = build(from, s, bytes, { name: uniqueName(bytes, name), at: it.pos, attack });
+      const r = build(from, s, bytes, { name: uniqueName(bytes, name), at: it.pos, attack, heading });
       const items = parseDAT(new DataView(r.bytes.buffer)).items;
 
       dropped = r.dropped;
@@ -2294,38 +2650,493 @@ async function copyPathFor(it, src, quiet = false)
   return dropped;
 }
 
-// A new straight path from the enemy, on the record of a stock path its kind flies.
-async function newPathFor(it)
+// A new straight path from the enemy, on the record of a stock path its kind flies; heading (yaw, radians) turns it with a placement.
+async function newPathFor(it, heading = null)
 {
   const cat = await getPathCatalog();
   const src = cat.find((c) => c.kinds.split(', ').includes(SUBTYPES[it.sub])) ?? cat[0];
 
-  return addPathFor(it, src, splineNew, `${it.name || 'Enemy'}_Path`, `New path: ${it.name}`);
+  return addPathFor(it, src, splineNew, `${it.name || 'Enemy'}_Path`, `New path: ${it.name}`, heading);
 }
 
-// Enemy side: waits for a wave (WAVE_FIELDS gate, spawned when its flag is raised) and flies a path once it appears.
+// The path a wave enemy flies once it appears (its Spawns level event says when). Troopers that spawn scattered (gridSpawn) name the ground-unit area
+// they appear in and run around in that field instead.
 function waveEnemyRow(it)
 {
   const dir = selected;
   const row = elem('div', { className: 'shotRow' });
 
-  Promise.all([readWaves(dir), rom.read(dir + '/dat')]).then(([waves, dv]) => {
-    const w = waveGet(dv, it);
-    const pick = wavePicker(waves, w.flag, 'Wait for a wave: it stays out of the level until a trigger starts the wave, then appears and flies its path');
+  rom.read(dir + '/dat').then((dv) => {
+    if (!waveGet(dv, it)?.gridSpawn)
+      return row.append('Path ', npcPathSelect(it, dv, '-', 'None (goes for the player)'));
 
-    pick.onchange = () => historyGroup(`Wave: ${it.name}`, async () => {
-      const flag = await chooseWave(pick, dir, waves);
+    const areas = parseDAT(dv).items.filter((x) => x.type === 6 && x.sub === 0x16 && x.name).map((x) => x.name);
+    const cur = npcPathGet(dv, it);
 
-      if (flag === null)
-        return syncSelPanel();
+    const pick = selectOf([
+      ...(areas.includes(cur) ? [] : [[cur, `${cur || 'None'} (missing)`]]),
+      ...areas.map((n) => [n, n])
+    ], cur, { title: 'The ground-unit area it appears in' });
 
-      await editItem(it, (bytes) => waveSet(bytes, it, flag ? { flag, counter: 0, atLeast: 0, gridSpawn: 0 } : { flag: 0 }), undefined, dir);
-    });
-
-    row.append('Waits for wave ', pick, ' Path ', npcPathSelect(it, dv, '-', 'None (goes for the player)'));
+    pick.onchange = () => editItem(it, (b) => npcSetPath(b, it, pick.value), `Area: ${it.name} -> ${pick.value}`, dir);
+    row.append('Area ', pick);
   });
 
   return row;
+}
+
+// Brings targets into the level when unit by ({ it, death }) is destroyed: they wait for its death's flag when it has one (what else waits on
+// that flag keeps waiting on it), else for a free flag its death now sets.
+async function releaseOnDestroyed(dir, dv, waves, by, targets)
+{
+  const flag = by.death.flag || waveFlagFor(waves, `${by.it.name}_destroyed`, levelUsedFlags(dv));
+
+  await editAsset(dir + '/dat', (b) => {
+    if (!by.death.flag)
+      unitDeathSet(b, by.it, { flag, value: 1 });
+
+    for (const t of targets)
+      unitGateSet(b, t, { flag });
+  });
+}
+
+// What the level's spawn gates hang on: for each named unit, what destroying it sets, and the trigger areas' enter flags.
+function gateSources(dv)
+{
+  const items = parseDAT(dv).items;
+  const units = items.filter((x) => isUnit(x) && x.name).map((x) => ({ it: x, death: unitDeath(dv, x) }));
+  const areas = items.filter((x) => isTriggerArea(x) && x.name && x.onEnter?.flag && x.onEnter.value);
+
+  return { items, units, areas };
+}
+
+// In words, what a gate waits for: the units whose death or the areas whose entry sets its flag or counter, else the mission's script.
+function gateWords(gate, src, exclude)
+{
+  const or = (list) => {
+    const names = list.map((n) => `'${n}'`);
+
+    return names.length > 3 ? `${names.slice(0, 3).join(', ')} or ${names.length - 3} more` : names.join(' or ');
+  };
+
+  if (gate.flag)
+  {
+    const units = src.units.filter((u) => u.it.offset !== exclude && u.death.flag === gate.flag).map((u) => u.it.name);
+    const areas = src.areas.filter((a) => a.onEnter.flag === gate.flag).map((a) => a.name);
+    const parts = [units.length && `${or(units)} is destroyed`, areas.length && `${or(areas)} is entered`].filter(Boolean);
+
+    return parts.length ? `When ${parts.join(', or ')}` : `When the mission says (flag ${gate.flag})`;
+  }
+
+  const counted = src.units.filter((u) => u.it.offset !== exclude && ((u.death.counter === gate.counter && u.death.add) || (u.death.counter2 === gate.counter && u.death.add2))).map((u) => u.it.name);
+
+  if (counted.length === 1 && gate.atLeast <= 1)
+    return `When '${counted[0]}' is destroyed`;
+
+  return counted.length ? `After ${gate.atLeast} of ${or(counted)} are destroyed` : `When the mission's count ${gate.counter} reaches ${gate.atLeast}`;
+}
+
+// When a unit enters the level (its spawn gate): at the start, when another unit is destroyed (that unit's death then sets the flag it waits
+// for), or with a wave; a gate set by several things, counters or the script shows as it is and stays until another choice replaces it.
+function appearsInfo(dv, waves, it)
+{
+  const gate = unitGate(dv, it);
+  const src = gateSources(dv);
+  const others = src.units.filter((u) => u.it.offset !== it.offset);
+  const setters = gate.flag && !gate.counter ? others.filter((u) => u.death.flag === gate.flag) : [];
+  const entered = gate.flag ? src.areas.filter((a) => a.onEnter.flag === gate.flag) : [];
+  const wave = Object.entries(waves).find(([, f]) => f === gate.flag)?.[0];
+  let value = 'keep';
+
+  if (!gate.flag && !gate.counter)
+    value = 'start';
+  else if (setters.length === 1 && !entered.length)
+    value = 'destroyed';
+  else if (wave && !setters.length && !entered.length && !gate.counter)
+    value = `wave:${gate.flag}`;
+
+  const words = gateWords(gate, src, it.offset);
+
+  const text = {
+    start: null,
+    destroyed: `Spawns when '${setters[0]?.it.name}' is destroyed`,
+    keep: `Spawns ${words[0].toLowerCase()}${words.slice(1)}`
+  }[value];
+
+  return { gate, src, others, setters, value, text: text === undefined ? `Spawns when '${wave}' is set` : text };
+}
+
+// What a power-up (subtype 0x4C) gives: npcPowerUpUpdate reads its record's +0x6C (0..7) when the player collects it and sets that
+// upgrade's bit in the pilot unlocks (0x80130B4C), through the jump table at 0x800A88C8.
+const POWER_UP_KIND = 0x6C;
+const POWER_UPS = ['Advanced lasers', 'Seeker missiles', 'Seeker torpedoes', 'Seeker cluster missiles', 'Advanced shields', 'Advanced missiles', 'Advanced torpedoes', 'Advanced bombs'];
+
+// The Level events window on a power-up being picked up: the upgrade it gives, saved as it is picked.
+function pickupEditor(it)
+{
+  const dir = selected;
+  const box = elem('div', { className: 'levelRules destroyed' }, elem('b', { textContent: `'${it.name || 'this'}' is picked up` }));
+
+  rom.read(dir + '/dat').then((dv) => {
+    const kind = dv.getUint32(it.offset + POWER_UP_KIND);
+    const pick = selectOf(POWER_UPS.map((n, k) => [k, n]), kind, { title: 'The upgrade the player gets for every craft that can use it' }, `(kind ${kind})`);
+
+    pick.onchange = () => editItem(it, (b) => dvOf(b).setUint32(it.offset + POWER_UP_KIND, +pick.value), `Pick-up: ${it.name} gives ${POWER_UPS[+pick.value]}`, dir);
+    box.append(elem('div', { className: 'shotRow' }, 'Give', pick));
+  });
+
+  return box;
+}
+
+// The Level events window on when a unit spawns: the condition, then for "When an object is destroyed" which object. A new one (isNew)
+// changes nothing until Add; an existing one saves each change.
+function appearsEditor(it, isNew)
+{
+  const dir = selected;
+  const row = elem('div', { className: 'shotRow' });
+  const box = elem('div', { className: 'levelRules' }, elem('b', { textContent: `'${it.name || 'this'}' spawns` }), row);
+
+  Promise.all([readWaves(dir), rom.read(dir + '/dat')]).then(([waves, dv]) => {
+    const info = appearsInfo(dv, waves, it);
+    const { gate, src, others, setters } = info;
+    const choices = waveChoices(dv, waves);
+    const asWave = info.value === 'keep' && gate.flag && !gate.counter && !setters.length && choices.some(([f]) => f === gate.flag);
+    const value = isNew ? 'destroyed' : (asWave ? `wave:${gate.flag}` : info.value);
+
+    const pick = selectOf([
+      ...(isNew ? [] : [['start', 'At the start']]),
+      ...(value === 'keep' ? [['keep', gateWords(gate, src, it.offset)]] : []),
+      ...choices.map(([f, n]) => [
+        `wave:${f}`,
+        Object.values(waves).includes(f) ? `When '${n}' is set` : n.replace(/^Flag (\d+)(.*)$/, 'When flag $1 is set$2')
+      ]),
+      ['new', 'When a new flag is set…'],
+      ['destroyed', 'When an object is destroyed']
+    ], value, { title: 'When it enters the level: a flag is set by a trigger area\'s Set flag or a level event' });
+
+    // Which object's destruction spawns it, picked only once "When an object is destroyed" is chosen.
+    const who = selectOf([
+      ['', 'Pick the object…'],
+      ...namedByKind(src.items, (x) => isUnit(x) && x.offset !== it.offset)
+    ], value === 'destroyed' && !isNew ? setters[0].it.name : '', { title: 'The object whose destruction spawns this one' });
+
+    const whoBox = searchable(who, 'Search objects');
+    const add = elem('button', { textContent: 'Add', title: 'Add this level event' });
+    const ready = () => (add.disabled = pick.value === 'destroyed' && !who.value);
+
+    whoBox.hidden = value !== 'destroyed';
+
+    const setter = async () => {
+      const by = others.find((u) => u.it.name === who.value);
+
+      if (!by)
+        return;
+
+      await releaseOnDestroyed(dir, dv, waves, by, [it]);
+      await reselect(it.type, it.index);
+    };
+
+    const appearsSet = async (v) => {
+      if (v === 'destroyed')
+        return setter();
+
+      if (v === 'new')
+      {
+        const flag = await chooseWave(pick, dir, waves);
+
+        return flag === null ? syncSelPanel() : editItem(it, (b) => unitGateSet(b, it, { flag }), undefined, dir);
+      }
+
+      if (v === 'start' || v.startsWith('wave:'))
+        return editItem(it, (b) => unitGateSet(b, it, { flag: v === 'start' ? 0 : +v.slice(5) }), undefined, dir);
+    };
+
+    const save = (v) => historyGroup(`Appears: ${it.name || 'unit'}`, () => appearsSet(v));
+
+    who.onchange = () => (isNew ? ready() : save('destroyed'));
+
+    pick.onchange = () => {
+      const v = pick.value;
+
+      whoBox.hidden = v !== 'destroyed';
+      ready();
+
+      if (v === 'destroyed')
+        return whoBox.querySelector('input').focus();
+
+      if (!isNew)
+        return save(v);
+    };
+
+    add.onclick = () => {
+      rulesPanelFocus = { ...rulesPanelFocus, isNew: false };
+      save(pick.value);
+    };
+
+    ready();
+    row.append(pick, whoBox);
+
+    if (isNew)
+      box.append(add);
+  });
+
+  return box;
+}
+
+// Several objects at once: a search box over a checklist of the select's options (by kind), "all shown" for a whole search, and one button
+// that hands every ticked value to onApply. ticked: the values ticked to begin with (what already applies); the button wakes once the
+// ticks differ from them, or when ready() (another part of the window changed). go(value): a row button that selects that object.
+function multiPick(pick, verb, onApply, { ticked: start = new Set(), ready = () => false, go = null } = {})
+{
+  const q = elem('input', { type: 'text', placeholder: 'Search objects' });
+  const menu = elem('div', { className: 'pickMenu multi' });
+  const all = elem('input', { type: 'checkbox', title: 'Tick every object the search shows' });
+  const add = elem('button', { textContent: verb });
+  const ticked = new Set(start);
+  const changed = () => ticked.size !== start.size || [...ticked].some((v) => !start.has(v));
+  const sync = () => (add.disabled = !changed() && !ready());
+  const shown = () => [...menu.querySelectorAll('input[data-v]')];
+
+  const render = () => {
+    const s = q.value.trim().toLowerCase();
+    const objects = new Set(go ? editObjects().map(([, x]) => x.name) : []);
+
+    menu.replaceChildren();
+
+    for (const node of pick.children)
+    {
+      const group = node.tagName === 'OPTGROUP';
+      const hits = (group ? [...node.children] : [node]).filter((o) => o.value && (!s || o.textContent.toLowerCase().includes(s)));
+
+      if (hits.length && group)
+        menu.append(elem('b', { textContent: node.label }));
+
+      for (const o of hits)
+      {
+        const box = elem('input', { type: 'checkbox', checked: ticked.has(o.value) });
+
+        box.dataset.v = o.value;
+
+        box.onchange = () => {
+          if (box.checked)
+            ticked.add(o.value);
+          else
+            ticked.delete(o.value);
+
+          sync();
+        };
+
+        const row = elem('label', {}, box, elem('span', { textContent: o.textContent }));
+
+        if (go && objects.has(o.value))
+          row.append(iconButton('eye', `View ${o.textContent}`, (e) => {
+            e.preventDefault();
+            viewNamed(o.value);
+          }), iconButton('view', `Select ${o.textContent}`, (e) => {
+            e.preventDefault();
+            go(o.value);
+          }));
+
+        menu.append(row);
+      }
+    }
+
+    all.checked = shown().length > 0 && shown().every((b) => b.checked);
+  };
+
+  all.onchange = () => {
+    for (const b of shown())
+    {
+      b.checked = all.checked;
+      b.onchange();
+    }
+  };
+
+  q.oninput = render;
+  add.onclick = () => onApply([...ticked]);
+  render();
+  sync();
+
+  return Object.assign(elem('div', { className: 'searchPick' }, elem('div', { className: 'shotRow' }, q, elem('label', { className: 'allShown' }, all, 'All shown')), menu, add), { sync });
+}
+
+// A long select as one search box: it shows the current choice, focusing it lists the others, typing narrows them and Enter picks the
+// first. The select stays the value holder, so its change handler runs as before.
+function searchable(pick, placeholder)
+{
+  const q = elem('input', { type: 'text', title: pick.title });
+  const menu = elem('div', { className: 'pickMenu', hidden: true });
+  const current = () => (pick.value ? pick.selectedOptions[0]?.textContent ?? '' : '');
+  let first = null;
+
+  const reset = () => {
+    q.value = current();
+    q.placeholder = pick.value ? placeholder : (pick.selectedOptions[0]?.textContent ?? placeholder);
+    menu.hidden = true;
+  };
+
+  const choose = (o) => {
+    pick.value = o.value;
+    reset();
+    q.blur();
+    pick.dispatchEvent(new Event('change'));
+  };
+
+  const render = () => {
+    const s = q.value === current() ? '' : q.value.trim().toLowerCase();
+
+    menu.replaceChildren();
+    first = null;
+
+    for (const node of pick.children)
+    {
+      const group = node.tagName === 'OPTGROUP';
+      const hits = (group ? [...node.children] : [node]).filter((o) => o.value && o.value !== pick.value && (!s || o.textContent.toLowerCase().includes(s)));
+
+      if (hits.length && group)
+        menu.append(elem('b', { textContent: node.label }));
+
+      for (const o of hits)
+      {
+        first ??= o;
+
+        // mousedown, so the pick lands before the input's blur closes the list.
+        menu.append(elem('button', {
+          type: 'button',
+          textContent: o.textContent,
+          onmousedown: (e) => {
+            e.preventDefault();
+            choose(o);
+          }
+        }));
+      }
+    }
+
+    menu.hidden = !first;
+  };
+
+  q.onfocus = () => {
+    q.select();
+    render();
+  };
+
+  q.oninput = render;
+  q.onblur = reset;
+
+  q.onkeydown = (e) => {
+    if (e.key === 'Enter' && first)
+      choose(first);
+    else if (e.key === 'Escape')
+      q.blur();
+  };
+
+  reset();
+
+  return elem('div', { className: 'searchPick' }, q, menu);
+}
+
+// What destroying a unit leads to: the objects its death spawns (their spawn gates wait on what it sets) and the in-mission camera
+// sequences the level's script plays for it.
+function destroyedInfo(dir, dv, it)
+{
+  const d = unitDeath(dv, it);
+  const counts = (c) => c > 0 && c < 0x100;
+  const sets = (g) => (d.flag && g.flag === d.flag) || (counts(g.counter) && ((d.add && g.counter === d.counter) || (d.add2 && g.counter === d.counter2)));
+  const src = gateSources(dv);
+  const spawned = src.units.filter((u) => u.it.offset !== it.offset && sets(unitGate(dv, u.it))).map((u) => u.it);
+  const cams = [...new Set((levelScript(dir)?.cameras ?? []).filter((c) => c.needs.some((n) => !n.not && sets(n))).map((c) => c.name))];
+  const by = src.units.find((u) => u.it.offset === it.offset) ?? { it, death: d };
+
+  return { src, spawned, cams, by };
+}
+
+// A mod rule that only plays a cutscene when this unit is destroyed: listed and edited with the level's own "when destroyed".
+const deathCamRule = (r, name) => r.when === 'destroyed' && r.object === name && r.actions?.length === 1 && r.actions[0].do === 'camera' && Object.keys(r).every((k) => ['when', 'object', 'actions', 'line'].includes(k));
+
+// The Level events window on a unit's "when destroyed": the one cutscene that plays and a checklist of what it spawns (ticked: spawns now).
+// Changes wait for Save (Add on a new one). The cutscene is the mission script's own when it has one (a replace line in camera_shots.txt changes it), otherwise a rule's.
+function destroyedEditor(it, isNew)
+{
+  const dir = selected;
+  const lv = dir.split('/').pop();
+  const box = elem('div', { className: 'levelRules destroyed' }, elem('b', { textContent: `'${it.name || 'this'}' is destroyed` }));
+
+  Promise.all([readWaves(dir), rom.read(dir + '/dat'), readRules(dir), virtualText(SHOT_LINKS)]).then(([waves, dv, doc, shots]) => {
+    const { src, spawned, cams, by } = destroyedInfo(dir, dv, it);
+    const cameras = src.items.filter((x) => x.type === 0 && x.sub === 0x26 && x.name);
+    const camRules = doc.rules.filter((r) => deathCamRule(r, it.name));
+    const mission = cams[0];
+    const swap = mission ? shotSwapGet(shots ?? '', lv, mission) : null;
+    const playing = mission ? (swap ?? mission) : (camRules[0]?.actions[0].camera ?? '');
+    const play = selectOf([['', 'None'], ...cameras.map((x) => [x.name, x.name])], playing, { title: 'The cutscene that plays' }, '(missing)');
+    const preview = iconButton('play', 'Open the cutscene', () => play.value && previewCutscene(`seq:${dir}:${cameras.find((x) => x.name === play.value).index}`));
+
+    const setPlay = async (cam) => {
+      if (mission)
+        await editText(SHOT_LINKS, shotSwapSet((await virtualText(SHOT_LINKS)) ?? '', lv, mission, cam), `Cutscene: ${mission} -> ${cam || 'nothing'}`);
+
+      if (!camRules.length && (mission || !cam))
+        return;
+
+      const name = await ensureRuleName(dir, it);
+
+      if (!name)
+        return;
+
+      const d = await readRules(dir);
+
+      d.rules = d.rules.filter((r) => !deathCamRule(r, name));
+
+      if (!mission && cam)
+        d.rules.push({ when: 'destroyed', object: name, actions: [{ do: 'camera', camera: cam }] });
+
+      await writeRules(dir, d, `Cutscene: ${cam || 'none'}`);
+    };
+
+    const applySpawns = async (names) => {
+      const want = new Set(names);
+      const had = new Set(spawned.map((t) => t.name));
+      const add = src.items.filter((x) => isUnit(x) && want.has(x.name) && !had.has(x.name));
+      const drop = spawned.filter((t) => !want.has(t.name));
+
+      if (add.length)
+        await releaseOnDestroyed(dir, dv, waves, by, add);
+
+      if (drop.length)
+        await editAsset(dir + '/dat', (b) => drop.forEach((t) => unitGateSet(b, t, {})), `Stop spawning ${drop.map((t) => t.name).join(', ')}`);
+    };
+
+    const pick = selectOf([['', ''], ...namedByKind(src.items, (x) => isUnit(x) && x.offset !== it.offset)], '');
+
+    const spawnPick = multiPick(pick, isNew ? 'Add' : 'Save', async (names) => {
+      rulesPanelFocus = { ...rulesPanelFocus, isNew: false };
+
+      await historyGroup(`When ${it.name || 'unit'} is destroyed`, async () => {
+        await applySpawns(names);
+
+        if (play.value !== playing)
+          await setPlay(play.value);
+      });
+
+      await reselect(it.type, it.index);
+      rulesChanged();
+    }, {
+      ticked: new Set(spawned.map((t) => t.name)),
+      ready: () => play.value !== playing,
+      go: (name) => selectNamed(name)
+    });
+
+    preview.disabled = !play.value;
+
+    play.onchange = () => {
+      preview.disabled = !play.value;
+      spawnPick.sync();
+    };
+
+    box.append(elem('div', { className: 'shotRow' }, 'Play', searchable(play, 'Search cutscenes'), preview), elem('b', { textContent: 'Spawn' }), spawnPick);
+  });
+
+  return box;
 }
 
 // The path an enemy or wingman flies: the level's paths, or one copied from another level. none = the "no path" value and its label.
@@ -2984,7 +3795,7 @@ function rulePathClick(e)
   const { set } = rulePathPick;
 
   stopRulePathPick();
-  set(it.name);
+  set(it.name, [e.clientX, e.clientY]);
 }
 
 // A fly order can only head for a region or an area with a radius; the game sends it at the player for anything else (func_800F5A30).
@@ -3079,14 +3890,25 @@ function ruleCondRow(r, kinds, ctx, save)
     }
   });
 
-  const pick = rulePathButton((name) => {
+  // A picked object offers the checks its kind has; the chosen one is added to the box ("and" before it unless the text ends in one).
+  const pick = rulePathButton((name, at) => {
     const t = box.text().trimEnd();
-    const check = kinds.get(name) === 'area' ? `entered(${name})` : `destroyed(${name})`;
 
     if (t.endsWith('('))
-      box.insert(name);
-    else
-      box.insert((t && !/\b(and|or|not)$/.test(t) ? ' and ' : (t ? ' ' : '')) + check);
+      return box.insert(name);
+
+    const add = (check) => box.insert((t && !/\b(and|or|not)$/.test(t) ? ' and ' : (t ? ' ' : '')) + check);
+
+    const checks = kinds.get(name) === 'area'
+      ? [['has been entered', `entered(${name})`], ['has not been entered', `not entered(${name})`]]
+      : [
+        ['is destroyed', `destroyed(${name})`],
+        ['is not destroyed', `not destroyed(${name})`],
+        ['health is below 50%', `health(${name}) < 50`],
+        ['health is at least 50%', `health(${name}) >= 50`]
+      ];
+
+    toggleAddMenu(pick, checks.map(([label, check]) => [`'${name}' ${label}`, check, () => add(check)]), at);
   }, PICK_COND);
 
   return elem('div', { className: 'cond' }, box, pick);
@@ -3103,7 +3925,11 @@ function newRuleAction(type, items)
   return { do: 'spawn', ...lastSpawn, path: paths.some((x) => x.name === lastSpawn.path) ? lastSpawn.path : paths.at(-1)?.name };
 }
 
-// owner: { kind: 'area' | 'path' | 'unit', it } on a selected object, or { kind: 'level' } in the Level events window.
+// The level events that name it: its own rules and the ones whose conditions or actions point at it.
+const rulesNaming = (doc, it) => (it.name ? doc.rules.map((r, i) => [r, i]).filter(([r]) => r.object === it.name || ruleRefs(r, ruleExt).some((x) => x.name === it.name)) : []);
+
+// owner: { kind: 'area' | 'path' | 'unit', it } on a selected object, or { kind: 'level' } in the Level events window. all: every rule
+// naming it.it, focus: the index of the rule to show first.
 function rulesSection(owner) {
   const dir = selected;
   const box = elem('div', { className: 'rulesBox' });
@@ -3126,7 +3952,11 @@ function rulesSection(owner) {
     // Level events also list rules whose object was deleted, so they can be pointed at another one or removed.
     const orphan = (i) => owner.kind === 'level' && broken.has(`${i}:object`);
     const custom = owner.kind === 'level' ? ruleExt.filter((e) => e.kind === 'event') : [];
-    const mine = doc.rules.map((r, i) => [r, i]).filter(([r, i]) => orphan(i) || (owner.kind === 'level' && r.when === 'custom') || (whens.some((w) => w.when === r.when) && (owner.kind === 'level' || r.object === owner.it.name)));
+    const theirs = (r) => owner.all && r.object !== owner.it.name;
+
+    const mine = owner.all
+      ? rulesNaming(doc, owner.it)
+      : doc.rules.map((r, i) => [r, i]).filter(([r, i]) => orphan(i) || (owner.kind === 'level' && r.when === 'custom') || (whens.some((w) => w.when === r.when) && (owner.kind === 'level' || r.object === owner.it.name)));
     const save = (label) => writeRules(dir, doc, label).then(rulesChanged);
     const fromMods = custom.length ? [optGroup('From mods', custom.map((e) => [`custom:${e.name}`, `${e.label} (${e.mod})`]))] : [];
 
@@ -3143,12 +3973,12 @@ function rulesSection(owner) {
 
     box.replaceChildren(elem('b', { className: 'rulesHead', textContent: 'When…' }));
 
-    for (const [r, i] of mine)
+    for (const [r, i] of owner.only != null ? mine.filter(([, k]) => k === owner.only) : mine)
     {
-      const rule = elem('div', { className: 'rule' });
+      const rule = elem('div', { className: 'rule' + (i === owner.focus ? ' focus' : '') });
       const head = elem('div', { className: 'when' });
       const on = RULE_WHENS.find((x) => x.when === r.when)?.on;
-      const whenPairs = (orphan(i) ? RULE_WHENS.filter((x) => x.on === on) : whens).map((x) => [x.when, x.label]);
+      const whenPairs = (orphan(i) || theirs(r) ? RULE_WHENS.filter((x) => x.on === on) : whens).map((x) => [x.when, x.label]);
       const w = selectOf([...whenPairs, ...fromMods], r.when === 'custom' ? `custom:${r.custom}` : r.when, null, () => `${r.custom} (needs a mod)`);
 
       w.onchange = () => {
@@ -3163,6 +3993,10 @@ function rulesSection(owner) {
       const del = iconButton('delete', 'Remove rule', () => (doc.rules.splice(i, 1), save('Remove rule')));
 
       head.append(w);
+
+      // Another object's rule that points at this one says whose it is.
+      if (theirs(r) && r.object)
+        head.append(elem('small', { textContent: `on ${r.object}` }));
 
       if (orphan(i))
         head.append(await rulePicker({ picker: on === 'path' ? 'pathPoint' : on }, r.object, (v) => ((r.object = v), save('Rule: object')), ctx));
@@ -3195,7 +4029,10 @@ function rulesSection(owner) {
 
         const rm = iconButton('delete', 'Remove action', () => (r.actions.splice(k, 1), save('Remove action')));
 
-        row.append(kind);
+        // The action and its remove button on one line, its settings indented under it.
+        const params = elem('div', { className: 'actParams' });
+
+        row.append(elem('div', { className: 'actHead' }, kind, rm), params);
 
         for (const p of RULE_ACTIONS.find((x) => x.do === a.do)?.params ?? extActs.find((e) => e.name === a.do)?.params ?? [])
         {
@@ -3215,18 +4052,21 @@ function rulesSection(owner) {
 
           // A created wave is already in the level, so changing these would do nothing.
           el.disabled = a.do === 'spawn' && !!a.flag;
-          row.append(el);
+          params.append(el);
 
           if (p.picker === 'path' && !el.disabled)
-            row.append(rulePathButton(set));
+            params.append(rulePathButton(set));
         }
 
         if (a.do === 'spawn')
-          row.append(spawnWaveButton(a, dir, () => save('Spawn wave')));
+          params.append(spawnWaveButton(a, dir, () => save('Spawn wave')));
 
-        row.append(rm);
+        params.hidden = !params.children.length;
         rule.append(row);
       }
+
+      if (r.actions?.length)
+        rule.append(elem('div', { className: 'actSep' }));
 
       const addAct = selectOf([['', '+ Add action'], ...actChoices], '', { className: 'addAct' });
 
@@ -3242,28 +4082,44 @@ function rulesSection(owner) {
 
       setWhen(r, add.value);
 
-      if (owner.kind !== 'level') {
+      if (owner.kind !== 'level')
+      {
         const name = await ensureRuleName(dir, owner.it);
 
         if (!name)
           return;
 
         r.object = name;
+        owner.it = { ...owner.it, name };
 
         const d = await readRules(dir);
 
         d.rules.push(r);
         await writeRules(dir, d, 'Add rule');
+        Object.assign(owner, { focus: d.rules.length - 1, shown: false });
         await reselect(owner.it.type, owner.it.index);
 
         return rulesChanged();
       }
 
       doc.rules.push(r);
+      Object.assign(owner, { focus: doc.rules.length - 1, shown: false });
+
+      // A new level event is the window's only rule: once added it opens as that one.
+      if (owner.only != null)
+        return save('Add rule').then(() => openRulesPanel({ kind: 'level', focus: doc.rules.length - 1 }));
+
       save('Add rule');
     };
 
-    box.append(add);
+    if (whens.length && !(owner.only >= 0))
+      box.append(add);
+
+    if (owner.focus != null && !owner.shown)
+    {
+      owner.shown = true;
+      box.querySelector('.rule.focus')?.scrollIntoView({ block: 'nearest' });
+    }
   };
 
   liveRuleViews.add({ box, render });
@@ -3277,59 +4133,6 @@ function levelRulesPanel()
 {
   const dir = selected;
   const box = elem('div', { className: 'levelRules' });
-  const filter = elem('input', { type: 'search', placeholder: 'Filter by name, when or action' });
-  const badOnly = elem('input', { type: 'checkbox' });
-  const badLabel = elem('label');
-  const list = elem('div', { className: 'ruleList' });
-  const tools = elem('div', { className: 'when' });
-  const whenLabel = (r) => RULE_WHENS.find((w) => w.when === r.when)?.label ?? r.when;
-
-  const render = async () => {
-    const [doc, dv] = await Promise.all([readRules(dir), rom.read(dir + '/dat')]);
-    const items = parseDAT(dv).items;
-    const broken = new Set(rulesBroken(doc, items, ruleExt).filter((b) => b.field === 'object').map((b) => b.rule));
-    const groups = new Map();
-
-    doc.rules.forEach((r, i) => r.when !== 'custom' && RULE_WHENS.find((w) => w.when === r.when)?.on !== 'level' && (groups.get(r.object) ?? groups.set(r.object, []).get(r.object)).push([r, i]));
-
-    const q = filter.value.trim().toLowerCase();
-
-    list.replaceChildren();
-
-    for (const [name, rules] of [...groups].sort(([a], [b]) => String(a).localeCompare(String(b))))
-    {
-      const bad = rules.some(([, i]) => broken.has(i));
-      const acts = rules.reduce((n, [r]) => n + (r.actions?.length ?? 0), 0);
-      const text = rules.map(([r]) => [
-        whenLabel(r),
-        ...(r.actions ?? []).map((a) => RULE_ACTIONS.find((x) => x.do === a.do)?.label ?? a.do)
-      ].join(' ')).join(' ');
-
-      if ((badOnly.checked && !bad) || (q && !`${name} ${text}`.toLowerCase().includes(q)))
-        continue;
-
-      const row = elem('button', {
-        className: 'ruleRow' + (bad ? ' bad' : ''),
-        title: bad ? 'Its object is gone: point it at another or remove it in Level events above' : 'Select it'
-      });
-
-      row.append(elem('b', { textContent: name }), ` ${rules.map(([r]) => whenLabel(r)).join('; ')} (${acts} action${acts === 1 ? '' : 's'})`);
-      row.onclick = () => bad || selectNamed(name);
-      list.append(row);
-    }
-
-    if (!list.children.length)
-      list.append(elem('small', {
-        className: 'shotNote',
-        textContent: groups.size ? 'No rules match.' : 'No rules on objects yet: select an area, path point or unit and add one.'
-      }));
-  };
-
-  filter.oninput = render;
-  badOnly.onchange = render;
-  badLabel.append(badOnly, ' broken only');
-  tools.append(filter, badLabel);
-
   const fromMods = elem('button', { title: 'Offer the actions and events of the native mods in the game folder (each mod\'s rules_ext.json)' });
 
   setEditIcon(fromMods, 'upload');
@@ -3337,9 +4140,7 @@ function levelRulesPanel()
   fromMods.hidden = !window.showDirectoryPicker;
   fromMods.onclick = () => loadRuleExt(true).then((ok) => ok || alert('No mods folder found in the game folder'));
 
-  const panels = elem('div', { className: 'levelRules' }, elem('b', { textContent: 'Level-wide' }), rulesSection({ kind: 'level' }), fromMods, elem('b', { textContent: 'Rules on objects' }), tools, list);
   const script = elem('div', { className: 'ruleScript' });
-  const scriptBtn = iconButton('script', 'Edit the rules as text', () => showScript(!scriptBtn.classList.contains('on')));
   let code = null;
 
   // The whole rules.txt in one box; an older rules.json shows as script and becomes rules.txt on the first save.
@@ -3351,7 +4152,7 @@ function levelRulesPanel()
     Object.assign(scriptCtx, {
       objects: ruleObjectKinds(parseDAT(dv).items),
       objectives: !!modLevelOf(dir)?.objectives?.length,
-      ext: ruleExt.length ? ruleExt : null
+      ext: ruleExt.length ? [...ruleExt, ...CRAFT_RULE_EXT] : null
     });
 
     if (code)
@@ -3381,40 +4182,83 @@ function levelRulesPanel()
 
   const scriptCtx = {};
 
-  const showScript = (on) => {
-    scriptBtn.classList.toggle('on', on);
-    store('rs64.rulesScript', on);
-    panels.hidden = on;
-    script.hidden = !on;
-
-    if (on)
-      renderScript();
-  };
-
-  box.append(elem('div', { className: 'when' }, scriptBtn), panels, script);
-  liveRuleViews.add({ box: list, render });
-  liveRuleViews.add({ box: script, render: () => !script.hidden && renderScript() });
-  showScript(!!stored('rs64.rulesScript', false));
-  render();
+  box.append(fromMods, script);
+  liveRuleViews.add({ box: script, render: renderScript });
+  renderScript();
 
   return box;
 }
 
-function openRulesPanel() {
+// focus: { kind, it, focus } opens the window on one object's level events (its own and those that point at it), that rule first.
+let rulesPanelFocus = null;
+
+// Outlines the event in the object's list that the Level events window has open.
+function markOpenRule()
+{
+  const f = $('rulesPanel').hidden || rulesPanelFocus?.isNew || rulesPanelFocus?.it?.offset !== sel?.it?.offset ? null : rulesPanelFocus;
+
+  for (const b of $('linksPanel').querySelectorAll('button.item'))
+    b.classList.toggle('on', (f?.flag ? b.ruleIndex?.includes(`flag:${f.flag}`) : f?.focus != null && b.ruleIndex?.includes(f.focus)) ?? false);
+}
+
+function openRulesPanel(focus = null)
+{
   rulesPanelDir = selected;
-  $('rulesBody').replaceChildren(levelRulesPanel());
+  rulesPanelFocus = focus;
+
+  // The window opens beside the list it came from; with no list it sits in the usual corner.
+  if (focus || levelEventsOn)
+    $('linksPanel').after($('rulesPanel'));
+  else
+    $('levelPanel').before($('rulesPanel'));
+
+  $('rulesPanel').querySelector('.rulesPanelHead b').textContent = focus?.isNew ? 'New level event' : (focus ? 'Level event' : 'All your rules as text');
+
+  if (focus?.flag)
+    $('rulesBody').replaceChildren(flagEditor(focus.flag));
+  else if (focus?.kind === 'level' && !focus.it)
+    $('rulesBody').replaceChildren(elem('div', { className: 'levelRules' }, rulesSection({
+      kind: 'level',
+      only: focus.isNew ? -1 : focus.focus,
+      focus: focus.focus
+    })));
+  else if (focus?.focus === 'destroyed')
+    $('rulesBody').replaceChildren(destroyedEditor(focus.it, focus.isNew));
+  else if (focus?.focus === 'entered')
+    $('rulesBody').replaceChildren(enteredEditor(focus.it, focus.isNew));
+  else if (focus?.focus === 'pickup')
+    $('rulesBody').replaceChildren(pickupEditor(focus.it));
+  else if (focus?.focus === 'appears')
+    $('rulesBody').replaceChildren(appearsEditor(focus.it, focus.isNew));
+  else if (focus)
+  {
+    $('rulesBody').replaceChildren(elem('div', { className: 'levelRules' }, elem('b', { textContent: focus.it.name || '(unnamed)' }), rulesSection({ ...focus, all: true })));
+  }
+  else
+    $('rulesBody').replaceChildren(levelRulesPanel());
+
   $('rulesPanel').hidden = false;
+  markOpenRule();
 
   if (window.showDirectoryPicker)
     loadRuleExt(false);
 }
 
-setEditIcon($('btnRules'), 'events');
-$('btnRules').append('Level events…');
+setEditIcon($('btnRules'), 'globe');
+$('btnRules').append('Level-wide events');
 $('btnRules').removeAttribute('aria-label');
-$('btnRules').onclick = () => ($('rulesPanel').hidden || rulesPanelDir !== selected ? openRulesPanel() : ($('rulesPanel').hidden = true));
+
+$('btnRules').onclick = () => {
+  levelEventsOn = !levelEventsOn;
+  syncSelPanel();
+};
+
 setEditIcon($('rulesClose'), 'close');
-$('rulesClose').onclick = () => ($('rulesPanel').hidden = true);
+
+$('rulesClose').onclick = () => {
+  $('rulesPanel').hidden = true;
+  markOpenRule();
+};
 
 // ---- Water, fog and clouds of the open level: water is on the level's own data, fog and clouds in its environment.json ----
 
@@ -3464,12 +4308,16 @@ function lookPanel()
   const box = elem('div', { className: 'levelRules look' });
   const path = ENV_PATH(rulesFolderOf(dir));
 
-  const changeEnv = async (label, change) => {
+  // reload: false for what only this panel and the flight area box show, so the view isn't rebuilt.
+  const changeEnv = async (label, change, reload = true) => {
     const doc = envParse(await virtualText(path));
 
     change(doc);
     await editText(path, envWrite(doc), label);
-    await reloadLevel(dir);
+
+    if (reload)
+      await reloadLevel(dir);
+
     await render();
   };
 
@@ -3516,6 +4364,45 @@ function lookPanel()
         );
     }
 
+    // The sun lights the terrain (baked when the level loads), the models and the ray-traced shadows. Strength scales the level's own sun
+    // and lit-ground colours.
+    const hmpPath = dir + '/hmp';
+    const hmpNow = u8(await rom.read(hmpPath));
+    const ownLight = parseHMP(dvOf(edits.get(hmpPath) ?? hmpNow)).light;
+    const light = parseHMP(dvOf(hmpNow)).light;
+    const [tx, ty, tz] = light.sunDir;
+    const deg = Math.PI / 180;
+    const sunUp = Math.round(Math.asin(Math.min(1, Math.abs(ty) / (Math.hypot(tx, ty, tz) || 1))) / deg);
+    const sunFrom = Math.round((Math.atan2(-tx, -tz) / deg + 360) % 360);
+    const peak = (c) => Math.max(...c, 1e-6);
+    const strength = +(peak(light.sunColor) / peak(ownLight.sunColor)).toFixed(2);
+    const changed = light.sunDir.some((v, k) => Math.abs(v - ownLight.sunDir[k]) > 1e-4) || strength !== 1;
+
+    const setSun = (from, up, s, label) => editAsset(hmpPath, (b) => hmpSetSun(b, {
+      dir: [-Math.cos(up * deg) * Math.sin(from * deg), Math.sin(up * deg), -Math.cos(up * deg) * Math.cos(from * deg)],
+      color: ownLight.sunColor.map((c) => c * s),
+      world: ownLight.world.map((c) => c * s)
+    }), label).then(() => {
+      for (const k of [...terrainCache.keys()])
+        if (k.startsWith(dir + '|'))
+          terrainCache.delete(k);
+
+      return reloadLevel(dir);
+    }).then(render);
+
+    const resetSun = () => editAsset(hmpPath, (b) => hmpSetSun(b, {
+      dir: ownLight.sunDir,
+      color: ownLight.sunColor,
+      world: ownLight.world
+    }), 'Sun').then(() => reloadLevel(dir)).then(render);
+
+    parts.push(
+      elem('div', { className: 'lookHead' }, elem('b', { textContent: 'Sun' }), ...(changed ? [iconButton('undo', 'Back to the level\'s own sun', resetSun)] : [])),
+      lookSlider('Direction', 'Where the sun is, in degrees round the map', sunFrom, 0, 359, 1, (v) => setSun(v, sunUp, strength, 'Sun direction')),
+      lookSlider('Height', 'Degrees above the horizon: low suns give long shadows', sunUp, 5, 90, 1, (v) => setSun(sunFrom, v, strength, 'Sun height')),
+      lookSlider('Strength', 'Against the level\'s own sun: 1 is as the game has it', strength, 0, 2, 0.05, (v) => setSun(sunFrom, sunUp, v, 'Sun strength'))
+    );
+
     parts.push(
       elem('div', { className: 'lookHead' }, elem('b', { textContent: 'Fog' })),
       lookSlider('Fog starts at', 'How far out the fog begins, as a share of the view distance', +fogStart.toFixed(2), 0.1, 0.95, 0.05, (v) => setFog('start', v)),
@@ -3543,13 +4430,55 @@ function lookPanel()
       parts.push(lookColor('Cloud colour', 'Back to the tan Taloraan colour', clouds.tint, [182, 140, 87], (c) => setClouds('tint', c)));
     }
 
+    // Until a side is changed every side uses the level's own inset; then all four are kept in environment.json.
+    const own = datFlightInset(dv);
+    const insets = doc.bounds ?? [own, own, own, own];
+    const [W, H] = mapSize();
+    const setBounds = (b) => changeEnv('Flight area', (d) => (b ? (d.bounds = b) : delete d.bounds), false);
+    const side = (label, k) => lookSlider(label, 'How far in from this edge of the map the craft is turned back', insets[k], 0, (k < 2 ? W : H) - insets[k ^ 1] - 2, 0.5, (v) => setBounds(insets.map((x, i) => (i === k ? v : x))));
+
+    parts.push(
+      elem('div', { className: 'lookHead' }, elem('b', { textContent: 'Flight area' }), ...(doc.bounds ? [iconButton('undo', 'Back to the level\'s own', () => setBounds(undefined))] : [])),
+      side('X min side', 0),
+      side('X max side', 1),
+      side('Z min side', 2),
+      side('Z max side', 3)
+    );
+
     box.replaceChildren(...parts);
+
+    if (!$('lookPanel').hidden && lookPanelDir === dir)
+      showFlightArea(insets, setBounds);
   };
 
   liveRuleViews.add({ box, render });
   render();
 
   return box;
+}
+
+// The open level's flight area with its side handles, outside the Water, fog and clouds panel too (on = false hides it).
+async function flightAreaShow(on)
+{
+  if (!on)
+    return showFlightArea(null);
+
+  const dir = selected;
+  const path = ENV_PATH(rulesFolderOf(dir));
+  const own = datFlightInset(await rom.read(dir + '/dat'));
+  const doc = envParse(await virtualText(path));
+
+  if (selected !== dir)
+    return;
+
+  // Nothing else in the view shows the flight area, so the box as dragged is the whole update.
+  showFlightArea(doc.bounds ?? [own, own, own, own], async (b) => {
+    const d = envParse(await virtualText(path));
+
+    d.bounds = b;
+    await editText(path, envWrite(d), 'Flight area');
+    rulesChanged();
+  });
 }
 
 function openLookPanel() {
@@ -3561,9 +4490,15 @@ function openLookPanel() {
 setEditIcon($('btnLook'), 'globe');
 $('btnLook').append('Water, fog and clouds…');
 $('btnLook').removeAttribute('aria-label');
-$('btnLook').onclick = () => ($('lookPanel').hidden || lookPanelDir !== selected ? openLookPanel() : ($('lookPanel').hidden = true));
+
+const closeLookPanel = () => {
+  $('lookPanel').hidden = true;
+  showFlightArea(null);
+};
+
+$('btnLook').onclick = () => ($('lookPanel').hidden || lookPanelDir !== selected ? openLookPanel() : closeLookPanel());
 setEditIcon($('lookClose'), 'close');
-$('lookClose').onclick = () => ($('lookPanel').hidden = true);
+$('lookClose').onclick = closeLookPanel;
 
 // ---- Opening crawls (mod/assets/crawl/<name>/crawl.json): the crawl of the level being edited. A stock chapter level's (0, 5, 10,
 // 15) is the mod's replacement for that chapter; a mod level's is the crawl its levels.json names. Until the first edit the game's (or
@@ -3602,6 +4537,7 @@ async function levelCrawl(dir, adding = false)
   const crawls = await modCrawls();
   const stock = chapter != null ? stockCrawls(frontText)[chapter] : null;
   const blank = { chapter: '', title: '', body: '', planet: chapter ?? 0, base: chapter ?? 0, replaces: -1, camera: [] };
+  const baseOf = (c) => (c.planet === 'own' ? c.base : c.planet);
 
   if (!ml) {
     if (chapter == null)
@@ -3614,7 +4550,7 @@ async function levelCrawl(dir, adding = false)
       name: mine?.name ?? `chapter_${chapter + 1}`,
       exists: !!mine,
       c: mine ?? { ...blank, ...stock },
-      base: chapter,
+      base: mine ? baseOf(mine) : chapter,
       replaces: chapter,
       level: null,
       label: `Chapter ${ROMAN[chapter]}`
@@ -3638,7 +4574,7 @@ async function levelCrawl(dir, adding = false)
   for (let i = 2; !named && taken.has(name); i++)
     name = stem.slice(0, 15 - String(i).length - 1) + '_' + i;
 
-  return { dir, name, exists: !!named, c, base: c.planet === 'own' ? c.base : c.planet, replaces: -1, level: ml, label: ml.title };
+  return { dir, name, exists: !!named, c, base: baseOf(c), replaces: -1, level: ml, label: ml.title };
 }
 
 // One undo step: more() writes the crawl's own files first, then crawl.json (made on the first edit; planet "own" while it has its own
@@ -3783,6 +4719,13 @@ function openCrawlPanel(ctx)
   body.onchange = () => save('text', { body: body.value.trim() });
   gaps();
 
+  const planet = selectOf(CRAWL_PLANETS.map((n, i) => [i, n]), ctx.base, { title: 'The backdrop (unless it has its own image) and the fly-by ships' });
+
+  planet.onchange = () => {
+    ctx.base = +planet.value;
+    save('planet', {});
+  };
+
   const status = ctx.exists ? `${ctx.label}: this mod's crawl (${ctx.name})` : `${ctx.label}: the game's crawl. Editing it makes a copy in this mod`;
   const textRow = stacked(fld('Text', body, 'Wrapped to the crawl width. An empty line starts a paragraph'));
 
@@ -3790,7 +4733,7 @@ function openCrawlPanel(ctx)
   box.append(elem('small', {
     className: 'shotNote',
     textContent: status
-  }), stacked(fld('Chapter', chapter, 'Small line above the title, can be empty')), stacked(fld('Title', title)), textRow, note);
+  }), fld('Planet', planet), stacked(fld('Chapter', chapter, 'Small line above the title, can be empty')), stacked(fld('Title', title)), textRow, note);
   $('crawlBody').replaceChildren(box);
   $('crawlPanel').hidden = false;
   placeCrawlPanel();
@@ -3825,6 +4768,19 @@ function placeCrawlPanel()
 new ResizeObserver(placeCrawlPanel).observe($('cutPanel'));
 
 // The window keeps the size it was dragged to (resizing it writes its inline size).
+// The event list window keeps the size it was dragged to (its corner sets the inline size).
+const linksSize = stored('rs64.linksSize', null);
+
+if (linksSize)
+  Object.assign($('linksPanel').style, { width: `${linksSize.w}px`, height: `${linksSize.h}px` });
+
+new ResizeObserver(() => {
+  const p = $('linksPanel');
+
+  if (!p.hidden && p.style.height)
+    store('rs64.linksSize', { w: p.offsetWidth, h: p.offsetHeight });
+}).observe($('linksPanel'));
+
 const crawlSize = stored('rs64.crawlSize', null);
 
 if (crawlSize)
@@ -3920,53 +4876,314 @@ function spawnWaveButton(a, dir, done) {
 // Who sets off a trigger area: the player or a named unit of the level (a stock list of several stays as it is until changed).
 const whoLabel = (names) => names.map((a) => (a === 'ply' ? 'The player' : a)).join(', ') || 'Nothing';
 
-function triggerWhoRow(it) {
-  const row = elem('div', { className: 'shotRow' });
-  const cur = (it.activators ?? []).join('|');
+// The trigger area's own section above its level events: what enters it to set it off, the player and any of the level's units, ticked
+// as they are now; Save writes the list.
+function triggerSection(it)
+{
+  const box = elem('div', { className: 'eventList' }, elem('div', { className: 'rulesPanelHead' }, elem('b', { textContent: 'Event trigger' })));
 
   rom.read(selected + '/dat').then((dv) => {
-    const units = namedByKind(parseDAT(dv).items, (x) => isUnit(x) || (x.type === 0 && x.sub === 0x27));
-    const known = cur === 'ply' || units.some((g) => [...g.children].some((o) => o.value === cur));
+    const pick = selectOf([['ply', 'The player'], ...namedByKind(parseDAT(dv).items, (x) => isUnit(x) || (x.type === 0 && x.sub === 0x27))], '');
 
-    const pick = selectOf([
-      ...(known ? [] : [[cur, whoLabel(it.activators ?? [])]]),
-      ['ply', 'The player'],
-      ...units
-    ], cur, { title: 'What has to come into this area for it to fire' });
+    const who = multiPick(pick, 'Save', (names) => editItem(it, (b) => triggerSetActivators(b, it, names), `Entered by: ${it.name || 'trigger'} -> ${whoLabel(names)}`), {
+      ticked: new Set(it.activators ?? []),
+      go: (n) => n !== 'ply' && selectNamed(n)
+    });
 
-    pick.onchange = () => editItem(it, (b) => triggerSetActivators(b, it, pick.value.split('|').filter(Boolean)), `Set off by: ${it.name || 'trigger'} -> ${whoLabel([pick.value])}`);
-    row.append('Set off by ', pick);
+    box.append(elem('small', { className: 'dim', textContent: 'Entered by' }), who);
   });
+
+  return box;
+}
+
+// The flags the level's objects link: for each, what sets it (an area entered, a unit destroyed) and the units that wait for it.
+function levelFlags(dv)
+{
+  const src = gateSources(dv);
+  const flags = new Map();
+  const at = (k) => flags.get(k) ?? flags.set(k, { setBy: [], spawns: [] }).get(k);
+
+  for (const a of src.areas)
+    at(a.onEnter.flag).setBy.push({ it: a, how: 'entered' });
+
+  for (const u of src.units)
+  {
+    if (u.death.flag && u.death.value)
+      at(u.death.flag).setBy.push({ it: u.it, how: 'destroyed' });
+
+    const g = unitGate(dv, u.it);
+
+    if (g.flag && !g.counter)
+      at(g.flag).spawns.push(u.it);
+  }
+
+  return flags;
+}
+
+// The Level event window on one flag: its name (a wave name, kept in waves.json), what sets it and what it spawns, with + Spawn for more.
+function flagEditor(flag)
+{
+  const dir = selected;
+  const box = elem('div', { className: 'levelRules destroyed' });
+
+  Promise.all([readWaves(dir), rom.read(dir + '/dat')]).then(([waves, dv]) => {
+    const name = Object.entries(waves).find(([, x]) => x === flag)?.[0] ?? '';
+    const { setBy, spawns } = levelFlags(dv).get(flag) ?? { setBy: [], spawns: [] };
+    const label = name ? `'${name}'` : `Flag ${flag}`;
+
+    const input = elem('input', {
+      type: 'text',
+      value: name,
+      placeholder: `Name flag ${flag}, e.g. Rebel pilots found`,
+      title: 'A name for this flag, shown wherever the level uses it'
+    });
+
+    const chip = (t) => elem('button', { className: 'chip', textContent: t.name, title: `Select ${t.name}`, onclick: () => reselect(t.type, t.index) });
+
+    const edit = async (change, what) => {
+      await editAsset(dir + '/dat', change, what);
+      await reloadLevel(dir);
+      rulesChanged();
+      openRulesPanel({ kind: 'level', flag });
+    };
+
+    input.onchange = async () => {
+      const next = Object.fromEntries(Object.entries(waves).filter(([, x]) => x !== flag));
+      const n = input.value.trim();
+
+      if (n && next[n])
+        return alert(`"${n}" already names flag ${next[n]}`);
+
+      await writeJson(wavesPath(dir), n ? { ...next, [n]: flag } : next, n ? `Name flag ${flag}: ${n}` : `Unname flag ${flag}`, 1);
+      rulesChanged();
+      openRulesPanel({ kind: 'level', flag });
+    };
+
+    box.append(elem('b', { textContent: `${label} is set` }), elem('label', { className: 'shotRow' }, 'Name', input));
+
+    for (const s of setBy)
+      box.append(elem('div', { className: 'shotRow' }, s.how === 'entered' ? 'Set when entered:' : 'Set when destroyed:', chip(s.it)));
+
+    const items = parseDAT(dv).items;
+    const had = new Set(spawns.map((t) => t.name));
+    const pick = selectOf([['', ''], ...namedByKind(items, isUnit)], '');
+
+    // Ticked: spawns when the flag is set; unticking one puts it in the level from the start.
+    const spawnPick = multiPick(pick, 'Save', (names) => {
+      const want = new Set(names);
+      const changes = items.filter((x) => isUnit(x) && want.has(x.name) !== had.has(x.name));
+
+      return edit((bytes) => changes.forEach((t) => unitGateSet(bytes, t, want.has(t.name) ? { flag } : {})), `Spawns when ${label} is set`);
+    }, { ticked: had, go: (n) => selectNamed(n) });
+
+    box.append(elem('b', { textContent: 'Spawn' }), spawnPick);
+  });
+
+  return box;
+}
+
+// The level's own events (mission start, timers, objectives, mod events, and rules whose object was deleted, in red) as a list like an
+// object's: grouped by trigger and searchable. One opens in the window beside it; + starts a new one; the script button shows them as text.
+function levelEventsList()
+{
+  const dir = selected;
+  const row = elem('div', { className: 'eventList' });
+  const search = elem('input', { type: 'search', placeholder: 'Search level events' });
+  const list = elem('div', { className: 'eventList' });
+  const whenText = (r) => RULE_WHENS.find((w) => w.when === r.when)?.label ?? r.custom ?? r.when;
+  const thenText = (r) => (r.actions ?? []).map((a) => `then ${(RULE_ACTIONS.find((x) => x.do === a.do)?.label ?? a.do).toLowerCase()}`).join(' ');
+
+  search.oninput = () => {
+    const q = search.value.trim().toLowerCase();
+
+    for (const b of list.querySelectorAll('button.item'))
+      b.hidden = !!q && !b.textContent.toLowerCase().includes(q);
+  };
+
+  let asText = !!stored('rs64.rulesScript', false);
+  let text = null;
+
+  const textBtn = iconButton('script', 'Show these as text (rules.txt): every rule your mod adds to this level', () => {
+    asText = !asText;
+    store('rs64.rulesScript', asText);
+    render();
+  });
+
+  const render = () => Promise.all([rom.read(dir + '/dat'), readRules(dir), readWaves(dir)]).then(([dv, doc, waves]) => {
+    const broken = new Set(rulesBroken(doc, parseDAT(dv).items, ruleExt).filter((b) => b.field === 'object').map((b) => b.rule));
+    const named = new Map(Object.entries(waves).map(([n, x]) => [x, n]));
+    const flagLabel = (x) => (named.has(x) ? `'${named.get(x)}'` : `flag ${x}`);
+    const readers = new Map([...levelFlags(dv)].map(([x]) => [x, flagReaders(dir, dv, x)]));
+    const flagged = [...levelFlags(dv)].filter(([x, l]) => l.spawns.length || named.has(x) || readers.get(x).length).sort(([a], [b]) => a - b);
+    const level = doc.rules.map((r, i) => [r, i]).filter(([r, i]) => broken.has(i) || r.when === 'custom' || RULE_WHENS.find((w) => w.when === r.when)?.on === 'level');
+    const groups = Map.groupBy(level, ([r, i]) => (broken.has(i) ? `${r.object} (deleted): ${whenText(r)}` : whenText(r)));
+
+    const head = elem('div', { className: 'rulesPanelHead' }, elem('b', { textContent: 'Level-wide events' }), elem('span', {},
+      iconButton('add', 'Add a level-wide event', () => openRulesPanel({ kind: 'level', isNew: true })),
+      textBtn,
+      iconButton('close', 'Back to the selected object', () => {
+        levelEventsOn = false;
+        syncSelPanel();
+      })));
+
+    const flagItems = flagged.map(([x, l]) => elem('button', {
+      className: 'item',
+      textContent: [
+        l.spawns.length && listed(`When ${flagLabel(x)} is set, spawn`, l.spawns.map((t) => t.name)),
+        ...readers.get(x)
+      ].filter(Boolean).join('\nand ').replace(/^(?!When)/, `When ${flagLabel(x)} is set, it `),
+      ruleIndex: [`flag:${x}`],
+      onclick: () => openRulesPanel({ kind: 'level', flag: x })
+    }));
+
+    list.replaceChildren(...flagItems, ...[...groups].map(([when, g]) => elem('button', {
+      className: 'item' + (g.some(([, i]) => broken.has(i)) ? ' bad' : ''),
+      title: g.some(([, i]) => broken.has(i)) ? 'Its object was deleted: point it at another or remove it' : '',
+      textContent: `${when} ${g.map(([r]) => thenText(r)).join('; ')}`.trim(),
+      ruleIndex: g.map(([, i]) => i),
+      onclick: () => openRulesPanel({ kind: 'level', focus: g[0][1] })
+    })));
+
+    if (!groups.size && !flagItems.length)
+      list.append(elem('span', { className: 'dim', textContent: 'None yet' }));
+
+    search.hidden = groups.size + flagItems.length < 4;
+
+    // The same events as rules.txt text, in this window; the button switches back.
+    textBtn.classList.toggle('on', asText);
+
+    if (asText)
+    {
+      text ??= levelRulesPanel();
+
+      // While it is showing, only the head is swapped, so the text box keeps its caret.
+      if (row.children[1] === text)
+        row.firstChild.replaceWith(head);
+      else
+        row.replaceChildren(head, text);
+
+      return;
+    }
+
+    row.replaceChildren(head, search, list);
+    markOpenRule();
+    search.oninput();
+  });
+
+  liveRuleViews.add({ box: row, render });
+  render();
 
   return row;
 }
 
-// What uses the selected object: the mod level's objectives that target it and the level events (rules) that name it. Shown only when
-// something does, with a way to the window that edits them.
-function usedByRow(it)
+// What uses the selected object: the mod level's objectives that target it and the level events (rules) that name it. Shown only when something does, with a way to the window that edits them.
+// kind: the rules it can own ('unit', 'area', 'path'), or null; each of its level events gets a button that opens it in the Level events window.
+function usedByRow(it, kind)
 {
   const dir = selected;
-  const row = elem('div', { className: 'shotRow usedBy', hidden: true });
+  const row = elem('div', { className: 'eventList' });
+  const search = elem('input', { type: 'search', placeholder: 'Search level events' });
+  const list = elem('div', { className: 'eventList' });
 
-  Promise.all([rom.read(dir + '/dat'), readRules(dir)]).then(([dv, doc]) => {
+  search.oninput = () => {
+    const q = search.value.trim().toLowerCase();
+
+    for (const b of list.querySelectorAll('button.item'))
+      b.hidden = !!q && !b.textContent.toLowerCase().includes(q);
+  };
+
+  const whenOf = (r) => [
+    RULE_WHENS.find((w) => w.when === r.when)?.label ?? r.custom ?? r.when,
+    r.object && r.object !== it.name ? `(on ${r.object})` : ''
+  ].filter(Boolean).join(' ');
+  const thenOf = (r) => (r.actions ?? []).map((a) => `then ${(RULE_ACTIONS.find((x) => x.do === a.do)?.label ?? a.do).toLowerCase()}`).join(' ');
+
+  const render = () => Promise.all([rom.read(dir + '/dat'), readRules(dir), readWaves(dir), virtualText(SHOT_LINKS)]).then(([dv, doc, waves, shots]) => {
     const l = modLevelOf(dir);
     const goals = (l?.objectives ?? []).map((o, k) => [o, k]).filter(([o]) => objectiveTargets(dv, o).some((t) => t.offset === it.offset));
-    const rules = it.name ? doc.rules.filter((r) => ruleRefs(r, ruleExt).some((x) => x.name === it.name)).length : 0;
-    const parts = goals.map(([o, k]) => `objective ${k + 1} (${o.text || 'no text'})`);
+    const rules = rulesNaming(doc, it);
 
-    if (rules)
-      parts.push(`${rules} level event${rules > 1 ? 's' : ''}`);
+    // Unnamed scenery keeps its model name where units keep these, so it has no spawn or destroy events.
+    const unit = kind === 'unit' && unitHasEvents(dv, it);
+    const death = unit ? destroyedInfo(dir, dv, it) : null;
+    const spawns = unit ? appearsInfo(dv, waves, it).text : null;
+    const gives = it.type === 0 && it.sub === 0x4C ? dv.getUint32(it.offset + POWER_UP_KIND) : null;
+    const area = kind === 'area' ? enteredParts(dir, dv, it, waves, shots).parts : [];
 
-    if (!parts.length)
-      return;
+    const open = (i) => openRulesPanel({ kind: kind ?? 'level', it, focus: i });
+    const openDeath = () => open('destroyed');
+    const openSpawn = () => open('appears');
+    const openPickup = () => open('pickup');
+    const openEntered = () => open('entered');
 
-    row.append(`Used by ${parts.join(', ')}`);
+    // The level's own spawn gates and "when destroyed" (spawns, cutscenes) list with the mod's rules: to a modder all are level events.
+    // A unit's "when destroyed" (its spawns, the mission's cutscenes, cutscene rules) is one entry, and rules with the same trigger one each.
+    const missionCams = (death?.cams ?? []).map((n) => shotSwapGet(shots ?? '', dir.split('/').pop(), n) ?? n).filter(Boolean);
+    const deathCams = rules.filter(([r]) => deathCamRule(r, it.name)).map(([r]) => r.actions[0].camera);
+    const ruleGroups = Map.groupBy(rules.filter(([r]) => !deathCamRule(r, it.name)), ([r]) => whenOf(r));
 
-    if (goals.length)
-      row.append(iconButton('edit', 'Objectives', () => openObjectives(dir)));
+    const deathParts = [
+      death?.spawned.length && listed('spawn', death.spawned.map((t) => t.name)),
+      (missionCams.length || deathCams.length) && listed('play', [...new Set([...missionCams, ...deathCams])]),
+      death?.cams.length && !missionCams.length && !deathCams.length && 'play no cutscene'
+    ].filter(Boolean);
 
-    row.hidden = false;
+    const entries = [
+      ...goals.map(([o, k]) => [`Objective ${k + 1}: ${o.text || 'no text'}`, () => openObjectives(dir), null]),
+      ...(spawns ? [[spawns, openSpawn, ['appears']]] : []),
+      ...(gives !== null ? [[`When picked up, give '${POWER_UPS[gives] ?? `kind ${gives}`}'`, openPickup, ['pickup']]] : []),
+      ...(area.length ? [[`When entered, ${area.join('\nand ')}`, openEntered, ['entered']]] : []),
+      ...(deathParts.length ? [[`When destroyed, ${deathParts.join('\nand ')}`, openDeath, ['destroyed']]] : []),
+      ...[...ruleGroups].map(([when, g]) => [`${when} ${g.map(([r]) => thenOf(r)).join('; ')}`.trim(), () => open(g[0][1]), g.map(([, i]) => i)])
+    ];
+
+    const head = elem('div', { className: 'rulesPanelHead' }, elem('b', { textContent: 'Level events' }));
+
+    // The object's own actions first, then "Another level event" (a rule). Each opens a new level event that saves on its Add.
+    const own = {
+      unit: unit ? [
+        [`destroyed:${deathParts.length ? '' : 'new'}`, 'When destroyed'],
+        [`appears:${spawns ? '' : 'new'}`, 'Spawns later, not at the start']
+      ] : [],
+      area: it.name ? [[`entered:${area.length ? '' : 'new'}`, 'When entered']] : []
+    }[kind] ?? [];
+
+    if (own.length)
+    {
+      const add = selectOf([['', '+ Add…'], ...own, ['rule', 'Another level event']], '', { title: 'Add a level event' });
+
+      add.onchange = () => {
+        const [focus, isNew] = add.value.split(':');
+
+        add.value = '';
+
+        if (focus === 'rule')
+          openRulesPanel({ kind, it });
+        else
+          openRulesPanel({ kind, it, focus, isNew: isNew === 'new' });
+      };
+
+      head.append(add);
+    }
+    else if (kind)
+      head.append(iconButton('add', 'Add a level event', () => openRulesPanel({ kind, it })));
+
+    list.replaceChildren(...entries.map(([text, onclick, ruleIndex]) => elem('button', { className: 'item', textContent: text, onclick, ruleIndex })));
+
+    if (!entries.length)
+      list.append(elem('span', { className: 'dim', textContent: 'None yet' }));
+
+    search.hidden = entries.length < 4;
+    row.replaceChildren(head, search, list);
+    markOpenRule();
+    search.oninput();
+
+    if (!kind)
+      $('linksPanel').hidden = !entries.length;
   });
+
+  liveRuleViews.add({ box: row, render });
+  render();
 
   return row;
 }
@@ -4099,7 +5316,7 @@ function musicPanel(region)
     const { flags, counters } = musicConditionSources(dv);
 
     for (const [wave, flag] of Object.entries(waves))
-      (flags.get(flag) ?? flags.set(flag, new Set()).get(flag)).add(`Wave ${wave}`);
+      (flags.get(flag) ?? flags.set(flag, new Set()).get(flag)).add(`'${wave}'`);
 
     if (!region.musicTrigger)
     {
@@ -4365,7 +5582,9 @@ async function thumbFromTarget(target)
   return URL.createObjectURL(await drawing.convertToBlob());
 }
 
-async function drawEnemyThumb(sub, model0)
+// The model an add-list kind shows: a unit subtype's own file, or model0 (a prop) from the packages. scaleDiv says whether the game divides
+// the item scale by the model's +0x34, as it does for units spawned from their own file.
+async function kindModel(sub, model0)
 {
   const [path, tableObject] = (model0 ? null : (SUBTYPE_MODEL[sub] ?? THUMB_MODELS[sub]))?.split('#') ?? [];
   const base = 'data/' + path;
@@ -4380,7 +5599,18 @@ async function drawEnemyThumb(sub, model0)
 
   const model = await loadModel(id);
   const object = (objName && model.hob.objects.find((o) => o.name === objName)) || model.hob.objects[0];
-  const mesh = buildObject(object, model, id, { tris: 0, verts: 0, parts: 0 });
+
+  return { id, model, object, scaleDiv: named ? 1 : object.scaleDiv || 1 };
+}
+
+async function drawEnemyThumb(sub, model0)
+{
+  const k = await kindModel(sub, model0);
+
+  if (!k)
+    return null;
+
+  const mesh = buildObject(k.object, k.model, k.id, { tris: 0, verts: 0, parts: 0 });
   const stage = new THREE.Scene();
 
   stage.add(mesh);
@@ -4470,7 +5700,7 @@ function renderAddList()
   if (!placing)
     dropGhost();
 
-  const hint = placingNeedsPath() ? 'Click a path to fly, or the ground for a new path' : 'Click the ground to place';
+  const hint = placingNeedsPath() ? 'Click a path to fly, or the ground for a new path' : (placeTurns() ? 'Click the ground to place, drag to turn it' : 'Click the ground to place');
 
   $('addOverlayText').textContent = `${hint}: ${addEntries.find((e) => e.key === placing)?.label ?? 'it'}`;
 }
@@ -4527,24 +5757,22 @@ function placeGhost(e, zone)
       ...(zone && { size: zone.size, rot: zone.rot })
     };
 
-    ghost = makeMarker(it);
+    const unit = placing.startsWith('enemy:') || placing.startsWith('prop:');
 
-    ghost.traverse((o) => {
-      o.raycast = () => {};
-
-      if (!o.material)
-        return;
-
-      o.material = o.material.clone();
-      Object.assign(o.material, { transparent: true, opacity: 0.55, depthWrite: false });
-    });
-
+    ghost = unit ? new THREE.Group().add(makeMarker(it)) : makeMarker(it);
+    seeThrough(ghost);
     ghost.userData = { kind: placing };
     markers.add(ghost);
+
+    if (unit)
+      ghostModel(ghost, placing);
 
     if (zone)
       return;
   }
+
+  if (placeDrag)
+    return;
 
   const path = placingPath(e);
   const hit = path ? new THREE.Vector3(...path.points[1]) : cursorGround(e);
@@ -4553,6 +5781,43 @@ function placeGhost(e, zone)
 
   if (hit)
     ghost.position.copy(hit);
+}
+
+function seeThrough(obj)
+{
+  obj.traverse((o) => {
+    o.raycast = () => {};
+
+    if (!o.material)
+      return;
+
+    // A node material's clone drops its map, so it is set again.
+    const fade = (m) => Object.assign(m.clone(), { map: m.map, transparent: true, opacity: 0.55, depthWrite: false });
+
+    o.material = Array.isArray(o.material) ? o.material.map(fade) : fade(o.material);
+  });
+}
+
+// A unit or prop's own model at the scale the level draws it, in place of the ghost's cone once it loads.
+async function ghostModel(g, kind)
+{
+  const prop = kind.startsWith('prop:');
+  const sub = prop ? null : +kind.slice(6);
+
+  const [k, item] = await Promise.all([
+    kindModel(sub, prop ? kind.slice(5) : null),
+    prop ? getPropCatalog().then((c) => c.get(kind)?.item) : enemyTemplate(sub).then((t) => t?.item)
+  ]).catch(() => []);
+
+  if (!k || ghost !== g)
+    return;
+
+  const mesh = buildObject(k.object, k.model, k.id, { tris: 0, verts: 0, parts: 0 });
+
+  mesh.scale.set(...(item?.scale?.[0] ? item.scale : [0.25, 0.25, 0.25]).map((s) => (s / k.scaleDiv) * HOB_TO_WORLD));
+  seeThrough(mesh);
+  g.clear();
+  g.add(mesh);
 }
 
 // The ground point under the cursor in game space (the markers' frame), or null.
@@ -4649,6 +5914,75 @@ canvas.addEventListener('pointerup', (e) => {
 
   zoneDefaultSize(t.sub).then((size = t.size) => addItem(src, [a.x - size[0] / 2, a.y, a.z - size[2] / 2], { size, rot: [0, 0, 0] }));
 }, true);
+
+// Objects are pressed into place: a click puts one down, and dragging before letting go turns it to face the cursor.
+let placeDrag = null;
+
+const placeTurns = () => {
+  const unit = placing?.startsWith('enemy:') && !TRAIN_UNITS.has(+placing.slice(6));
+
+  return (editMode === 'objects' || editMode === 'events') && !placingNeedsPath() && (unit || placing?.startsWith('prop:') || placingTemplate()?.type === 0);
+};
+
+function placeKind(kind, at, rot = null)
+{
+  if (kind.startsWith('enemy:') || kind.startsWith('prop:'))
+    return placeEnemy(kind, at, null, rot);
+
+  placing = null;
+  renderAddList();
+  addItem(sel && String(markerKind(sel.it)) === kind && (kind !== 'zmus' || sel.it.musicTrigger) ? sel.it : addTemplates.get(kind), at, undefined, rot);
+}
+
+canvas.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0 || placeBusy || gizmo.axis || !placeTurns())
+    return;
+
+  const a = cursorGround(e);
+
+  if (!a)
+    return;
+
+  placeDrag = { a, x: e.clientX, y: e.clientY, rot: null, q: ghost?.quaternion.clone() };
+  controls.enabled = false;
+  canvas.setPointerCapture(e.pointerId);
+  e.stopImmediatePropagation();
+}, true);
+canvas.addEventListener('pointermove', (e) => {
+  if (!placeDrag)
+    return;
+
+  e.stopImmediatePropagation();
+
+  const b = cursorGround(e);
+  const { a } = placeDrag;
+
+  if (!b || Math.hypot(e.clientX - placeDrag.x, e.clientY - placeDrag.y) < 8 || Math.hypot(b.x - a.x, b.z - a.z) < 1e-3)
+    return;
+
+  // Models look down +Z, so the yaw toward the cursor is atan2(dx, dz) in game space.
+  placeDrag.rot = [0, THREE.MathUtils.radToDeg(Math.atan2(b.x - a.x, b.z - a.z)), 0];
+
+  if (ghost)
+    ghost.quaternion.setFromRotationMatrix(placementRotation(placeDrag.rot));
+}, true);
+canvas.addEventListener('pointerup', (e) => {
+  if (!placeDrag || e.button !== 0)
+    return;
+
+  e.stopImmediatePropagation();
+
+  const { a, rot, q } = placeDrag;
+
+  placeDrag = null;
+  controls.enabled = true;
+
+  if (q)
+    ghost?.quaternion.copy(q);
+
+  if (placing)
+    placeKind(placing, a.toArray(), rot);
+}, true);
 $('addSearch').oninput = renderAddList;
 
 // The wheel scrolls the bar sideways, as it has nothing to scroll vertically.
@@ -4677,6 +6011,7 @@ function layoutAddBar()
 function setAddBarHeight(px)
 {
   $('addBar').style.height = `${px || ADD_BAR_HEIGHT}px`;
+  document.documentElement.style.setProperty('--add-h', `${px || ADD_BAR_HEIGHT}px`);
   fitAddRows();
 }
 
@@ -4732,12 +6067,12 @@ function stopPlacing()
 $('addCancel').onclick = stopPlacing;
 
 // Enemies keep placing until stopped; clicks wait for each add to land so two never overlap.
-async function placeEnemy(kind, at, path)
+async function placeEnemy(kind, at, path, rot = null)
 {
   placeBusy = true;
 
   try {
-    await (kind.startsWith('prop:') ? addProp(kind, at) : addEnemy(+kind.slice(6), at, path));
+    await (kind.startsWith('prop:') ? addProp(kind, at, rot) : addEnemy(+kind.slice(6), at, path, rot));
   } finally {
     placeBusy = false;
     renderAddList();
@@ -4851,13 +6186,40 @@ async function getPropCatalog()
       if (!model || found.has(key) || !(inPackage.has(model) || SUBTYPE_MODEL[it.sub]))
         continue;
 
-      const label = (it.name || model).replace(/[_\s]*\d*$/, '').replace(/_/g, ' ') || model;
-
-      found.set(key, { dir: p.slice(0, -4), item: it, model, label });
+      found.set(key, { dir: p.slice(0, -4), item: it, model, label: propBaseLabel(it.name || model) });
     }
   }
 
+  // Props of one level that would share a label (Corellia's six "City" blocks) add the part of their model names that differs.
+  const groups = new Map();
+
+  for (const c of found.values())
+    groups.set(c.dir + '|' + c.label, [...(groups.get(c.dir + '|' + c.label) ?? []), c]);
+
+  for (const list of [...groups.values()].filter((l) => l.length > 1))
+  {
+    const stems = list.map((c) => c.model.replace(/_(hi|lo)(?=_|$)/, '').replace(/new$/, ''));
+    let n = 0;
+
+    while (stems.every((s) => s[n] === stems[0][n]) && n < stems[0].length)
+      n++;
+
+    list.forEach((c, k) => (c.label = `${c.label} ${stems[k].slice(n).replace(/^_+/, '').toUpperCase() || k + 1}`));
+  }
+
   return propCatalog = found;
+}
+
+// A prop's name as a label: its DAT name (or model) without copy numbers, a leading "20_" or underscores, CamelCase split, capitalised;
+// too short a name (b, me1) reads as Building.
+function propBaseLabel(name)
+{
+  const s = name.replace(/[_\s]*\d*$/, '').replace(/^\d+_/, '').replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2').trim();
+
+  // A lowercase one-letter kind prefix (b_building) adds nothing.
+  const t = s.replace(/^[a-z]\s+/, '');
+
+  return t.length < 4 ? 'Building' : t[0].toUpperCase() + t.slice(1);
 }
 
 const packageCache = new Map();
@@ -4987,7 +6349,9 @@ async function packageFits(dir, lv, model)
   return [...new Set([...current, lv])].reduce((n, l) => n + packageSize(l), 0) <= PACKAGE_BUDGET;
 }
 
-async function addProp(key, pos)
+const setRecordRot = (rec, rot) => rot?.forEach((v, a) => new DataView(rec.buffer).setFloat32(0x1C + a * 4, v));
+
+async function addProp(key, pos, rot = null)
 {
   const c = (await getPropCatalog()).get(key);
 
@@ -5001,6 +6365,8 @@ async function addProp(key, pos)
   const dv = await rom.read(c.dir + '/dat');
   const rec = new Uint8Array(dv.buffer, dv.byteOffset + c.item.offset, dv.getUint32(c.item.offset + 8)).slice();
   const dat = selected + '/dat';
+
+  setRecordRot(rec, rot);
 
   await historyGroup(`Add ${c.label}`, async () => {
     await editAsset(dat, (bytes) => {
@@ -5016,7 +6382,7 @@ async function addProp(key, pos)
 }
 
 // path: a flight path of this level for it to start on. A unit that must have a path gets a new one at pos when none is given.
-async function addEnemy(sub, pos, path)
+async function addEnemy(sub, pos, path, rot = null)
 {
   const t = await enemyTemplate(sub);
 
@@ -5028,6 +6394,7 @@ async function addEnemy(sub, pos, path)
   const label = `Add ${SUBTYPES[sub]}`;
 
   new DataView(rec.buffer).setUint16(0, sub);
+  setRecordRot(rec, rot);
 
   if (TRAIN_UNITS.has(sub))
     return addTrain(sub, u8(dv), path ? path.points[1] : pos, path);
@@ -5046,7 +6413,7 @@ async function addEnemy(sub, pos, path)
       await editAsset(selected + '/dat', (bytes) => datAddDevastatorGuns(bytes, u8(dv), rec));
 
     if (UNITS_NEED_PATH.has(sub) && !path)
-      await newPathFor(added);
+      await newPathFor(added, rot && THREE.MathUtils.degToRad(rot[1]));
     else
       await reselect(0, added.index);
   });
@@ -5054,7 +6421,7 @@ async function addEnemy(sub, pos, path)
 
 function nameRow(it)
 {
-  const row = elem('label', { textContent: 'Name' });
+  const row = elem('label', { className: 'field' }, elem('span', { textContent: 'Name' }));
 
   const inp = elem('input', {
     type: 'text',
@@ -5109,11 +6476,14 @@ function syncSelPanel()
 
   $('selInfo').textContent = !sel
     ? `Click ${editMode === 'objects' ? 'an object' : 'an event marker'} to select it`
-    : `${it.name || '(unnamed)'}: ${it.type === 0 && it.model ? it.model : TYPES[markerKind(it)]?.label ?? 'item'}` + (sel.fixed ?? '');
+    : `${it.name || '(unnamed)'}: ${sel.fixed ? SUBTYPES[it.sub] : (it.type === 0 && it.model ? it.model : TYPES[markerKind(it)]?.label ?? 'item')}`;
 
   const f = $('selFields');
 
   f.textContent = '';
+
+  if (sel?.fixed)
+    f.append(elem('small', { className: 'dim', textContent: sel.fixed }));
 
   if (sel && !sel.fixed && !sel.pathNode)
     f.append(nameRow(it));
@@ -5124,7 +6494,8 @@ function syncSelPanel()
 
     row.textContent = `Along ${sel.pathNode.s.name || 'spline'} %`;
 
-    const inp = elem('input', { type: 'number', step: 'any', min: 0, max: 100, value: +(sel.pathAt * 100).toFixed(2) });
+    const loops = !!sel.pathNode.s.loops;
+    const inp = elem('input', { type: 'number', step: 'any', value: +(sel.pathAt * 100).toFixed(2), ...(loops ? {} : { min: 0, max: 100 }) });
 
     inp.onchange = () => {
       const n = parseFloat(inp.value);
@@ -5132,7 +6503,8 @@ function syncSelPanel()
       if (!Number.isFinite(n))
         return;
 
-      slidePathEvent(THREE.MathUtils.clamp(n / 100, 0, 1));
+      slidePathEvent(loops ? (((n / 100) % 1) + 1) % 1 : THREE.MathUtils.clamp(n / 100, 0, 1));
+      inp.value = +(sel.pathAt * 100).toFixed(2);
       commitSel();
     };
 
@@ -5149,9 +6521,8 @@ function syncSelPanel()
       if (!Array.isArray(it[key]) || (key === 'scale' && !sel.o.userData.placedItem) || (key === 'rot' && isMusicZone(it)))
         continue;
 
-      const row = elem('label');
-
-      row.textContent = label;
+      // A fixed label width, so the X, Y and Z fields of every row line up.
+      const row = elem('label', { className: 'field' }, elem('span', { textContent: label }));
 
       it[key].forEach((v, a) => {
         const inp = elem('input', { type: 'number', step: 'any', value: +v.toFixed(3), title: 'XYZ'[a] });
@@ -5183,16 +6554,39 @@ function syncSelPanel()
     }
 
   if (sel && editMode === 'events' && isTriggerArea(it))
-    f.append(triggerWhoRow(it), triggerRadiusRow(it));
+    f.append(triggerRadiusRow(it));
 
   if (sel && editMode === 'events' && markerKind(it) === 'troam')
     f.append(roamGroundNote(it));
 
-  if (sel && !sel.pathNode && (editMode === 'objects' || editMode === 'events'))
-    f.append(usedByRow(it));
+  const ruleKind = !sel ? null : (editMode === 'events' && it.type === 7 && it.pathEvent ? 'path' : (editMode === 'events' && it.type === 7 && it.onEnter ? 'area' : (editMode === 'objects' && isUnit(it) ? 'unit' : null)));
 
-  if (sel && editMode === 'events' && isTriggerArea(it) && it.name)
-    f.append(shotLinkRow(it), destroyRow(it), waveTriggerRow(it));
+  // The object's level events, when it appears and what destroying it brings in sit in their own window beside this panel.
+  const links = $('linksPanel');
+  const eventsMode = editMode === 'objects' || editMode === 'events';
+  const linked = !levelEventsOn && sel && !sel.pathNode && eventsMode;
+
+  links.replaceChildren();
+  links.hidden = levelEventsOn ? !eventsMode : !linked || !ruleKind;
+  $('btnRules').classList.toggle('on', levelEventsOn);
+
+  if (levelEventsOn && eventsMode)
+    links.append(levelEventsList());
+  else if (linked)
+  {
+    if (editMode === 'events' && isTriggerArea(it))
+      links.append(triggerSection(it));
+
+    links.append(usedByRow(it, ruleKind));
+  }
+
+  // One object's event window follows the selection: a spawn edit reselects the unit and shows the new state, another object closes it.
+  const same = it && rulesPanelFocus?.it?.type === it.type && rulesPanelFocus.it.index === it.index;
+
+  if (it && !$('rulesPanel').hidden && rulesPanelFocus && !same)
+    $('rulesPanel').hidden = true;
+  else if (same && !$('rulesPanel').hidden && ['destroyed', 'appears', 'entered', 'pickup'].includes(rulesPanelFocus.focus))
+    openRulesPanel({ ...rulesPanelFocus, it });
 
   if (sel && editMode === 'objects' && it.type === 0 && WAVE_FIELDS[it.sub])
     f.append(waveEnemyRow(it));
@@ -5202,14 +6596,6 @@ function syncSelPanel()
 
   if (sel && editMode === 'objects' && it.type === 0 && UNITS_NEED_PATH.has(it.sub) && !UNITS_OWN_PATH.has(it.sub))
     f.append(npcPathRow(it));
-
-  if (sel && editMode === 'events' && it.type === 7 && it.pathEvent)
-    f.append(rulesSection({ kind: 'path', it }));
-  else if (sel && editMode === 'events' && it.type === 7 && it.onEnter)
-    f.append(rulesSection({ kind: 'area', it }));
-
-  if (sel && editMode === 'objects' && isUnit(it))
-    f.append(rulesSection({ kind: 'unit', it }));
 
   if (sel && editMode === 'events' && it.waypoint)
     f.append(arrowPanel(it));
@@ -5223,7 +6609,7 @@ function syncSelPanel()
     $('selInfo').append(' ', eventHelpLink(it));
 
   if (sel && editMode === 'events' && isFlightPath(it) && !sel.pathNode)
-    f.append(pathAttackRow(it));
+    f.append(pathLoopRow(it), pathAttackRow(it));
 
   $('btnDup').disabled = !sel || !!sel.fixed || !!it.pathEvent;
   $('btnDel').disabled = !sel || !canDelete(it);
@@ -5240,7 +6626,7 @@ function syncSelPanel()
     $('rulesPanel').hidden = true;
 
   if (lookPanelDir !== selected)
-    $('lookPanel').hidden = true;
+    closeLookPanel();
 
   hud();
 }
@@ -5267,8 +6653,9 @@ async function addItem(src, pos, zone, rot = null)
   if (zone)
     zone.size.concat(zone.rot).forEach((v, a) => new DataView(rec.buffer).setFloat32((a < 3 ? 0x28 : 0x1C - 12) + a * 4, v));
 
-  // A copy keeps its source's name; one that rules name (its source deleted or not) gets its own, so it never takes over their rules.
+  // A copy keeps its source's name; one that rules or the stock script name gets its own, so it never takes over their lookups and can be renamed.
   const ruled = await ruleNames(dir);
+  const ownName = it.name && (ruled.has(it.name) || scriptFinds(it.name, dir));
 
   const newest = (bytes) => parseDAT(dvOf(bytes)).items.filter((x) => x.type === it.type).reduce((a, b) => (a && a.index >= b.index ? a : b), null);
 
@@ -5286,7 +6673,7 @@ async function addItem(src, pos, zone, rot = null)
       });
     }
 
-    if (it.name && ruled.has(it.name))
+    if (ownName)
       await editAsset(dir + '/dat', (bytes) => datNameItem(bytes, newest(bytes), uniqueName(bytes, it.name, ruled)));
 
     // A linked music region gets its own trigger area; sharing the source's would leave the new region with no way to start its song.
@@ -5362,15 +6749,12 @@ async function addCameraAtView(src)
   await addItem(src, pos, null, rot);
 }
 
-// Dragging an Audio row by its grip (a click on the row still opens it) onto a cutscene's Audio lane. Esc or a drop elsewhere does nothing.
+// Dragging an Audio row (a click still opens it) onto a cutscene's Audio lane. Esc or a drop elsewhere does nothing.
 let listDrag = null;
 
-function dragGrip(r)
+function dragRow(g, r)
 {
-  const g = elem('span', { className: 'grip', draggable: true, title: 'Drag onto the Audio lane of a cutscene you are editing' });
-
-  setEditIcon(g, 'grip');
-  g.onclick = (e) => e.stopPropagation();
+  g.draggable = true;
 
   g.ondragstart = (e) => {
     listDrag = { audio: r.row, label: r.label };
@@ -5382,8 +6766,6 @@ function dragGrip(r)
     listDrag = null;
     document.querySelectorAll('.dropOk').forEach((x) => x.classList.remove('dropOk'));
   };
-
-  return g;
 }
 
 // el takes a dragged row while ok() holds, highlighted under it.
@@ -5487,11 +6869,15 @@ async function fillAddKinds() {
 }
 
 // Left clicks in Objects / Events mode select (or place) instead of opening the info card.
-function editClick(e) {
+function editClick(e)
+{
   if (editMode !== 'objects' && editMode !== 'events')
     return false;
 
-  if (gizmo.axis || placeBusy)
+  // A click on the same spot again steps through what is under it, even where the selection's move handle sits (a click is no drag).
+  const again = !!sel && !!lastEditClick && Math.hypot(e.clientX - lastEditClick[0], e.clientY - lastEditClick[1]) <= 4;
+
+  if ((gizmo.axis && !again) || placeBusy)
     return true;
 
   if (rulePathPick)
@@ -5524,25 +6910,36 @@ function editClick(e) {
     if (!hit)
       return true;
 
-    const kind = placing;
-    const at = root.worldToLocal(hit.point.clone()).toArray();
-
-    if (kind.startsWith('enemy:') || kind.startsWith('prop:'))
-      return placeEnemy(kind, at), true;
-
-    placing = null;
-    renderAddList();
-    addItem(sel && String(markerKind(sel.it)) === kind && (kind !== 'zmus' || sel.it.musicTrigger) ? sel.it : addTemplates.get(kind), at);
+    placeKind(placing, root.worldToLocal(hit.point.clone()).toArray());
 
     return true;
   }
 
-  select(editHit(e));
+  // Clicking the same spot again steps to the next thing under it, in either edit mode, switching to that mode.
+  const all = again ? editHitsAll(e) : [];
+  const at = all.findIndex((h) => h.o === sel?.o);
+
+  // Nothing of this mode under the cursor: the nearest thing of the other one, in its mode.
+  const next = (at >= 0 && all.length > 1 ? all[(at + 1) % all.length] : null) ?? (editHit(e) ? null : editHitsAll(e)[0]);
+  const hit = next?.o ?? editHit(e);
+
+  lastEditClick = [e.clientX, e.clientY];
+
+  // Clicking off an object also closes its event window (another object's click closes it in syncSelPanel).
+  if (!hit && rulesPanelFocus?.it)
+    $('rulesPanel').hidden = true;
+
+  if (next && next.mode !== editMode)
+    setEditMode(next.mode);
+
+  select(hit);
 
   return true;
 }
 
-const EDIT_MODES = ['terrain', 'objects', 'events'];
+let lastEditClick = null;
+
+const EDIT_MODES = ['objects', 'events', 'terrain'];
 
 // F: frames what is selected in the level or cutscene editor from the current viewing angle. Returns whether there was something to frame.
 function focusSelected()
@@ -5556,6 +6953,14 @@ function focusSelected()
   if (tr && $('cutCam').checked)
     cutFreeView();
 
+  frameObject(o);
+
+  return true;
+}
+
+// Moves the camera to fit o from the current viewing angle.
+function frameObject(o)
+{
   o.updateWorldMatrix(true, true);
 
   const box = new THREE.Box3().setFromObject(o);
@@ -5566,8 +6971,18 @@ function focusSelected()
   controls.target.copy(sphere.center);
   camera.position.copy(sphere.center).addScaledVector(away, reach * 1.3);
   controls.update();
+}
 
-  return true;
+// Shows the object named name (framed and outlined) without selecting it, so what is selected and its windows stay as they are.
+function viewNamed(name)
+{
+  const o = editObjects().find(([, x]) => x.name === name)?.[0];
+
+  if (!o)
+    return;
+
+  frameObject(o);
+  boxAround(hoverBox, o !== sel?.o && o);
 }
 
 function editKey(e)
@@ -5623,7 +7038,10 @@ const cornerGeo = new THREE.SphereGeometry(1, 12, 8);
 const _cw = new THREE.Vector3();
 
 // Constant on-screen size: about 1.2% of the distance to the camera.
-const sizeCorners = () => corners.forEach((h) => h.scale.setScalar(camera.position.distanceTo(h.getWorldPosition(_cw)) * 0.012));
+const sizeCorners = () => [
+  ...corners,
+  ...(flightArea?.handles ?? [])
+].forEach((h) => h.scale.setScalar(camera.position.distanceTo(h.getWorldPosition(_cw)) * 0.012));
 let corners = [];
 let cornerDrag = null;
 
@@ -5824,6 +7242,153 @@ canvas.addEventListener('pointerup', (e) => {
   const it = sel.it;
 
   setPathPoints(it, it.points, `Move point ${c.point + 1}`);
+}, true);
+
+// The flight area, drawn while the Water, fog and clouds panel is open: the craft is turned back at this box. insets are how far in from
+// the map's min X, max X, min Z and max Z edges each side is; a handle in the middle of a side drags that side alone.
+const flightMat = new THREE.LineBasicMaterial({ color: 0xff5a4a, depthTest: false, transparent: true });
+const flightHandleMat = new THREE.MeshBasicMaterial({ color: 0xff5a4a, depthTest: false, transparent: true });
+let flightArea = null;
+let flightDrag = null;
+
+// The map's edges (min X, max X, min Z, max Z): the yellow outline while Map size has sides dragged out, as the flight area is kept
+// from the edges and follows them when the map grows.
+function mapEdges()
+{
+  const [W, H] = mapSize();
+
+  return mapSizing ? mapRect(mapSizing) : [0, W, 0, H];
+}
+
+// The ground height at x, z, from the nearest edge outside the map (where a grown map continues it).
+function groundNear(x, z)
+{
+  const [W, H] = mapSize();
+
+  return levelHeight(Math.min(Math.max(x, 0), W), Math.min(Math.max(z, 0), H));
+}
+
+function flightBox(insets)
+{
+  const [x0, x1, z0, z1] = mapEdges();
+
+  return [x0 + insets[0], x1 - insets[1], z0 + insets[2], z1 - insets[3]];
+}
+
+function flightOutline(insets)
+{
+  const [x0, x1, z0, z1] = flightBox(insets);
+  const at = (x, z) => new THREE.Vector3(x, groundNear(x, z) - 0.3, z);
+  const ring = [];
+
+  for (const [ax, az, bx, bz] of [[x0, z0, x1, z0], [x1, z0, x1, z1], [x1, z1, x0, z1], [x0, z1, x0, z0]])
+  {
+    const n = Math.max(2, Math.ceil(Math.hypot(bx - ax, bz - az) / 0.5));
+
+    for (let i = 0; i < n; i++)
+      ring.push(at(ax + (bx - ax) * i / n, az + (bz - az) * i / n));
+  }
+
+  ring.push(ring[0].clone());
+
+  return ring;
+}
+
+function placeFlightHandles()
+{
+  const [x0, x1, z0, z1] = flightBox(flightArea.insets);
+  const mx = (x0 + x1) / 2;
+  const mz = (z0 + z1) / 2;
+
+  [[x0, mz], [x1, mz], [mx, z0], [mx, z1]].forEach(([x, z], k) => flightArea.handles[k].position.set(x, groundNear(x, z) - 0.3, z));
+}
+
+// insets null hides the box; save(insets) stores a finished drag.
+function showFlightArea(insets, save)
+{
+  flightArea?.group.removeFromParent();
+  flightArea = null;
+
+  const world = root?.getObjectByName('markers')?.parent;
+
+  if (!insets || !world || !Number.isFinite(mapSize()[0]))
+    return;
+
+  const group = new THREE.Group();
+  const line = outlineLine(flightMat);
+
+  setOutline(line, flightOutline(insets));
+  line.renderOrder = 10;
+  group.add(line);
+
+  const handles = [0, 1, 2, 3].map((side) => {
+    const h = new THREE.Mesh(cornerGeo, flightHandleMat);
+
+    h.renderOrder = 10;
+    h.userData.flightSide = side;
+    group.add(h);
+
+    return h;
+  });
+
+  world.add(group);
+  flightArea = { group, line, handles, insets: insets.slice(), save };
+  placeFlightHandles();
+}
+
+canvas.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0 || !flightArea)
+    return;
+
+  const h = pick(e, flightArea.handles);
+
+  if (!h)
+    return;
+
+  flightDrag = { side: h.object.userData.flightSide, y: h.object.position.y };
+  controls.enabled = false;
+  canvas.setPointerCapture(e.pointerId);
+  e.stopImmediatePropagation();
+}, true);
+canvas.addEventListener('pointermove', (e) => {
+  if (!flightDrag)
+    return;
+
+  e.stopImmediatePropagation();
+
+  const r = canvas.getBoundingClientRect();
+
+  pointer.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(pointer, camera);
+
+  const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(new THREE.Vector3(0, 1, 0), root.localToWorld(new THREE.Vector3(0, flightDrag.y, 0)));
+  const w = raycaster.ray.intersectPlane(plane, new THREE.Vector3());
+
+  if (!w)
+    return;
+
+  const l = root.worldToLocal(w);
+  const [x0, x1, z0, z1] = mapEdges();
+  const ins = flightArea.insets;
+  const side = flightDrag.side;
+  const [lo, hi] = side < 2 ? [x0, x1] : [z0, z1];
+  const span = hi - lo;
+  const along = side < 2 ? l.x : l.z;
+  const inset = side % 2 ? hi - along : along - lo;
+
+  // A side stays on the map and at least 2 units (one cell) from the opposite side.
+  ins[side] = Math.round(Math.min(Math.max(inset, 0), span - ins[side ^ 1] - 2) * 10) / 10;
+  setOutline(flightArea.line, flightOutline(ins));
+  placeFlightHandles();
+}, true);
+canvas.addEventListener('pointerup', (e) => {
+  if (!flightDrag)
+    return;
+
+  e.stopImmediatePropagation();
+  flightDrag = null;
+  controls.enabled = true;
+  flightArea.save(flightArea.insets.slice());
 }, true);
 setTool('translate');
 setEditMode(null);
@@ -6143,23 +7708,6 @@ async function exportDialog(items, doc, base)
     dlg.showModal();
 }
 
-// The game folder's handle is kept in IndexedDB (handles cannot go in localStorage), so the picker shows once.
-function idbKv(mode, fn) {
-  return new Promise((res, rej) => {
-    const open = indexedDB.open('rs64-explorer', 1);
-
-    open.onupgradeneeded = () => open.result.createObjectStore('kv');
-    open.onerror = () => rej(open.error);
-
-    open.onsuccess = () => {
-      const req = fn(open.result.transaction('kv', mode).objectStore('kv'));
-
-      req.onsuccess = () => res(req.result);
-      req.onerror = () => rej(req.error);
-    };
-  });
-}
-
 const GAME_EXE = 'RogueSquadron64Recomp.exe';
 const PREVIEW_MOD = 'rs64-explorer-preview';
 const PLAY_LINK_FILE = 'explorer-link.txt';
@@ -6301,7 +7849,7 @@ const GOALS = [
   {
     label: 'Repaint or replace a ship',
     page: 'Make-a-Model-Mod',
-    next: 'Right-click a part to repaint it, or bring in your own model with Import craft model.',
+    next: 'Right-click a part to repaint it, or bring in your own model with Import model.',
     go: async () => {
       setMode('models');
       await showModel('data/pl_crafts/xwing');

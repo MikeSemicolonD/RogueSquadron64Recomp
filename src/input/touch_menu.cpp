@@ -204,20 +204,20 @@ namespace rs64::touch {
             return paused ? Context::PauseMenu : Context::Flight;
         }
 
-        if (overlay != 1)
+        const std::string s = id ? id : "";
+
+        if (overlay != 1 || s == "attribution")
         {
             return Context::Cutscene;
         }
-
-        const std::string s = id ? id : "";
 
         if (s == "menu.passcodes") {
             return Context::Wheel;
         }
 
-        if (s == "menu" || s == "menu.main" || s == "menu.account" || s == "menu.options" || s == "menu.game_settings" ||
+        if (s == "menu" || s == "menu.main" || s == "menu.options" || s == "menu.game_settings" ||
             s == "menu.sound_settings" || s == "menu.controller_settings" || s == "menu.biographies" || s == "menu.elite_rogues" ||
-            s == "menu.media")
+            s == "menu.showroom")
         {
             return Context::ListMenu;
         }
@@ -466,7 +466,7 @@ namespace rs64::touch {
         const uint8_t count = rb(r, kGcmd + 0x95);
 
         // Mod pages (DRAW DISTANCE) reuse the volume bar entry type, so any menu can hold one.
-        if (!in_label_mem(ptr) || entry < 0 || entry >= count || count > 8)
+        if (!in_label_mem(ptr) || entry < 0 || entry >= count || count > rs64::menu::kMenuRows)
         {
             return false;
         }

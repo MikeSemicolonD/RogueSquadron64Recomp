@@ -4,41 +4,40 @@ Recorded controller input, one folder per mission, for repeatable test runs: fra
 
 Run outputs (`.replay.hash`, logs) go to `logs/`, not here. Record and replay in the Release build; Debug adds background work that changes frame timing.
 
-## Two kinds of recording
+## Mission recordings
 
-| Kind | Header | Starts at | Env vars | Used for |
-| --- | --- | --- | --- | --- |
-| **Mission** (lockstep) | `rs64-ls v2` | Mission frame 0, fixed 1/30 s step, forced RNG seed | `ROGUESQ_LS_RECORD` / `ROGUESQ_LS_REPLAY` | Bit-exact determinism checks against a `.hash` baseline; co-op runs (`ROGUESQ_MP_PAD`, `ROGUESQ_LS_PAD2_REPLAY`) |
-| **Session** | `rs64-input v3`/`v4` | First input poll after launch (boot and menus included) | `ROGUESQ_INPUT_RECORD` / `ROGUESQ_INPUT_REPLAY` | Visual checks (interpolation, rendering) where the run only has to be close |
+A recording (header `rs64-ls v2`, `ROGUESQ_LS_RECORD` / `ROGUESQ_LS_REPLAY`) starts at mission frame 0 with the game's own RNG state (saved as `seed=` and restored by the replay; `ROGUESQ_LS_SEED` forces one) and plays like normal play: the draw distance's wider unit active range and the widescreen view tests stay on (`live=1`), and the replay takes the recorded widescreen and draw distance. Recordings without `live=1` replay with those stock, as they were recorded. It runs at the logic rate it was recorded at (`hz=` in the header: the TARGET FPS setting, up to 240; 30 when absent). Above 30 it records on real time and stores each frame's dt, so it plays at normal speed even when the frame rate dips, and a replay steps the same dts frame-exact at any `ROGUESQ_SPEED`. Used for bit-exact determinism checks against a `.hash` baseline, exact-frame repros and co-op runs (`ROGUESQ_MP_PAD`, `ROGUESQ_LS_PAD2_REPLAY`).
 
 A mission recording `<name>.rec` sits next to its baseline `<name>.rec.hash`, the per-frame state hashes written while recording. A recording without a `.hash` is input-only.
+
+Besides input, a mission recording stores the audio thread's answers the simulation branches on: `S` lines (song finished) and `P` lines (speech idle, which gates the mission-end result). A recording made before `P` lines existed plays that answer live, so its last ~33 frames, the mission end, match only when replayed at the speed it was recorded at.
 
 ## Missions
 
 | Id | Mission | Folder | Recordings |
 | ---: | --- | --- | --- |
 | 0 | Ambush at Mos Eisley | [00-ambush-at-mos-eisley](00-ambush-at-mos-eisley) | see below |
-| 1 | Rendezvous on Barkhesh | | none yet |
-| 2 | The Search for the Nonnah | | none yet |
-| 3 | Defection at Corellia | | none yet |
-| 4 | Liberation of Gerrard V | | none yet |
-| 5 | The Jade Moon | | none yet |
+| 1 | Rendezvous on Barkhesh | [01-rendezvous-on-barkhesh](01-rendezvous-on-barkhesh) | in folder |
+| 2 | The Search for the Nonnah | [02-the-search-for-the-nonnah](02-the-search-for-the-nonnah) | in folder |
+| 3 | Defection at Corellia | [03-defection-at-corellia](03-defection-at-corellia) | in folder |
+| 4 | Liberation of Gerrard V | [04-liberation-of-gerrard-v](04-liberation-of-gerrard-v) | see below |
+| 5 | The Jade Moon | [05-the-jade-moon](05-the-jade-moon) | see below |
 | 6 | Imperial Construction Yards | [06-imperial-construction-yards](06-imperial-construction-yards) | see below |
-| 7 | Assault on Kile II | | none yet |
-| 8 | Rescue on Kessel | | none yet |
+| 7 | Assault on Kile II | [07-assault-on-kile-ii](07-assault-on-kile-ii) | see below |
+| 8 | Rescue on Kessel | [08-rescue-on-kessel](08-rescue-on-kessel) | see below |
 | 9 | Prisons of Kessel | [09-prisons-of-kessel](09-prisons-of-kessel) | see below |
-| 10 | Battle Above Taloraan | | none yet |
-| 11 | Escape from Fest | | none yet |
-| 12 | Blockade on Chandrila | | none yet |
-| 13 | Raid on Sullust | | none yet |
-| 14 | Moff Seerdon's Revenge | | none yet |
-| 15 | The Battle of Calamari | | none yet |
-| 16 | Beggar's Canyon (bonus) | | none yet |
-| 17 | The Death Star Trench Run (bonus) | | none yet |
-| 18 | The Battle of Hoth (bonus) | | none yet |
-| 20 | CHICKEN (AT-ST passcode level) | | none yet |
+| 10 | Battle Above Taloraan | [10-battle-above-taloraan](10-battle-above-taloraan) | in folder |
+| 11 | Escape from Fest | [11-escape-from-fest](11-escape-from-fest) | in folder |
+| 12 | Blockade on Chandrila | [12-blockade-on-chandrila](12-blockade-on-chandrila) | in folder |
+| 13 | Raid on Sullust | [13-raid-on-sullust](13-raid-on-sullust) | in folder |
+| 14 | Moff Seerdon's Revenge | [14-moff-seerdons-revenge](14-moff-seerdons-revenge) | in folder |
+| 15 | The Battle of Calamari | [15-the-battle-of-calamari](15-the-battle-of-calamari) | in folder |
+| 16 | Beggar's Canyon (bonus) | [16-beggars-canyon](16-beggars-canyon) | see below |
+| 17 | The Death Star Trench Run (bonus) | [17-the-death-star-trench-run](17-the-death-star-trench-run) | see below |
+| 18 | The Battle of Hoth (bonus) | [18-the-battle-of-hoth](18-the-battle-of-hoth) | in folder |
+| 20 | CHICKEN (AT-ST passcode level) | [ai/20-chicken](ai/20-chicken) | see below |
 
-Needs re-recording: `defection_at_corellia`, `liberation_of_gerrard_v`, `the_jade_moon`, `imperial_construction_yards`, `construction_yards_bonus` and both `assault_on_kile_ii` recordings were recorded before the forced-craft secondary fix (secondary 3 whatever the craft). Replays now get the craft's own secondary from the menu driver, so they diverge from frame 0.
+Upgrade pickups: these mission recordings fly through their level's upgrade (the collect at `npcPowerUpUpdate` fires during the replay): `defection_at_corellia_20261118_191957`, `the_jade_moon_20261119_171142`, `prisons_of_kessel_20261119_200534`, `battle_above_taloraan_20261007_134057`, `blockade_on_chandrila_20261007_135613`, `raid_on_sullust_20261007_140400` and `moff_seerdons_revenge_20261007_141118`. The `assault_on_kile_ii`, `escape_from_fest` and `the_search_for_the_nonnah` runs leave theirs. Every run starts with the pilot's upgrades from its `flags0` header, which already owns all of them in the 2026-11 recordings.
 
 ### 00 Ambush at Mos Eisley
 
@@ -50,18 +49,61 @@ Needs re-recording: `defection_at_corellia`, `liberation_of_gerrard_v`, `the_jad
 
 The `mos_eisley.rec` baseline was recorded with the `larger_object_pool.nrm` mod loaded, so replays must run with it staged; other gameplay mods (e.g. invincibility) must not be staged during replays.
 
+### 04 Liberation of Gerrard V
+
+| File | Kind | Contents |
+| --- | --- | --- |
+| `liberation_of_gerrard_v_20261119_170322.rec` (+ `.hash`) | Mission | 7335 frames, X-wing, no deaths: a full run to mission complete |
+
+### 05 The Jade Moon
+
+| File | Kind | Contents |
+| --- | --- | --- |
+| `the_jade_moon_20261119_171142.rec` (+ `.hash`) | Mission | 7578 frames, X-wing, one death mid-run, played to the mission end |
+
 ### 06 Imperial Construction Yards
 
 | File | Kind | Contents |
 | --- | --- | --- |
 | `construction_yards_towcable.rec` (+ `.hash`) | Mission | 3209 frames in the snowspeeder (craft 4), firing the tow cable; frame-interpolation checks for the cable (`level:6,4`). Recorded with `larger_object_pool.nrm` staged and no gameplay mods (invincibility, long-tow-cable): replay the same way or player0 diverges from frame 0 |
-| `construction_yards_bonus.rec` (+ `.hash`) | Mission | 3126 frames in the snowspeeder (craft 4): destroys the far silo past the landing platform and collects the Advanced Bombs (power-up DAT item 121). Co-op pickup sharing: `run-mp.ps1 -HostPad` this, `-ClientPad construction_yards_towcable.rec` (which never goes near the silo) |
+
+### 07 Assault on Kile II
+
+| File | Kind | Contents |
+| --- | --- | --- |
+| `assault_on_kile_ii_20261119_194907.rec` (+ `.hash`) | Mission | 9932 frames, A-wing, no deaths, played to the mission end |
+
+### 08 Rescue on Kessel
+
+| File | Kind | Contents |
+| --- | --- | --- |
+| `rescue_on_kessel_20261119_194433.rec` (+ `.hash`) | Mission | 4194 frames, X-wing, no deaths, played to the mission end |
 
 ### 09 Prisons of Kessel
 
 | File | Kind | Contents |
 | --- | --- | --- |
-| `kessel.rec` | Session (v3) | Boot, menus, then flying past the searchlight towers and fighting (frame-interpolation checks) |
+| `prisons_of_kessel_20261119_200534.rec` (+ `.hash`) | Mission | 18007 frames, X-wing, no deaths, played to the mission end |
+
+### 16 Beggar's Canyon
+
+| File | Kind | Contents |
+| --- | --- | --- |
+| `beggars_canyon_20261119_200217.rec` (+ `.hash`) | Mission | 2392 frames, T-16, no deaths, played to the mission end |
+
+### 17 The Death Star Trench Run
+
+| File | Kind | Contents |
+| --- | --- | --- |
+| `the_death_star_trench_run_20261119_201651.rec` (+ `.hash`) | Mission | 6425 frames, X-wing, one death mid-run, played to the mission end |
+
+### 20 CHICKEN (ai/)
+
+`ai/` holds recordings an agent played through the rs64 MCP, one `<id>-<mission>` folder per level, kept apart from hand-played runs.
+
+| File | Kind | Contents |
+| --- | --- | --- |
+| `chicken_try6.rec` | Mission, no baseline | Agent-played AT-ST run with recorded head aim, 3238 frames: first base cleared, bunker opened, rebel pilots leave it ~frame 2440. A checkpoint to continue from with `ROGUESQ_LS_RESUME`, not a test |
 
 ## Scripts
 
@@ -69,10 +111,9 @@ The `mos_eisley.rec` baseline was recorded with the `larger_object_pool.nrm` mod
 
   ```powershell
   .\tools\debug\recordings\record.ps1 -Level 5 -Craft 0 -Name jade_moon
-  .\tools\debug\recordings\record.ps1 -Level 9 -Kind session
   ```
 
-- `run-replays.ps1`: replays every mission recording under a folder that has a `.hash` baseline (skips `*_coop.rec` and session recordings) and compares each with `compare_hashes.py`. Writes to `logs/lockstep/<tag>/` with a `summary.csv`; exits 0 only if every replay is IDENTICAL.
+- `run-replays.ps1`: replays every mission recording under a folder that has a `.hash` baseline (skips `*_coop.rec`) and compares each with `compare_hashes.py`. Writes to `logs/lockstep/<tag>/` with a `summary.csv`; exits 0 only if every replay is IDENTICAL.
 
   ```powershell
   .\tools\debug\recordings\run-replays.ps1 -Tag release-a
@@ -80,10 +121,17 @@ The `mos_eisley.rec` baseline was recorded with the `larger_object_pool.nrm` mod
   ```
 
   `-Speed 4` (default) runs the game clock 4x and matches 1x; 8 is too fast for the menu driver.
+- `run-level-perf.ps1`: replays each level's dated recording (`mos_eisley.rec` for level 0) in its own launch at 4x and tabulates game fps, DL walk ms per frame, hitches and working set at mission start and end. Writes to `logs/levelperf/<tag>/` with a `summary.csv`. The latest table is in [debug-tools.md](../../../docs/engine/debug-tools.md#per-level-performance).
+
+  ```powershell
+  .\tools\debug\recordings\run-level-perf.ps1 -Tag current
+  .\tools\debug\recordings\run-level-perf.ps1 -Tag taloraan -Levels 10
+  ```
+
 - `capture-frames.ps1`: replays one recording (level and craft from its header, 4x) and screenshots the window at each listed frame; the replay pauses there (`ROGUESQ_LS_PAUSE_AT`) until the capture is taken, so two runs with different `-Env` give pixel-identical frames for A/B of render changes. Output and the hash log go to `dumps/capture/<tag>/`, never next to the recording.
 
   ```powershell
-  .\tools\debug\recordings\capture-frames.ps1 -Recording tools\debug\recordings\06-imperial-construction-yards\construction_yards_bonus.rec -Frames 2995,3025 -Tag pickup -Env "ROGUESQ_RT_LIGHTS=1"
+  .\tools\debug\recordings\capture-frames.ps1 -Recording tools\debug\recordings\16-beggars-canyon\beggars_canyon_20261119_200217.rec -Frames 600,1200 -Tag canyon -Env "ROGUESQ_RT_LIGHTS=1"
   ```
 
   `-Cutscene <level>,<kind>` (kind 0 intro, 1 extro, 2 special) instead of `-Recording` boots into that cutscene and captures its own frames, the frame numbers the RS64 Explorer timeline shows (`ROGUESQ_PAUSE_AT=cutscene:<f>`), for comparing the game against the explorer frame for frame. It leaves other running game instances alone.
@@ -116,18 +164,4 @@ python tools\debug\recordings\compare_hashes.py tools\debug\recordings\00-ambush
 
 Use the `level=` and `craft=` values from the recording's header in `ROGUESQ_BOOT_TARGET`. The replay writes `<rec>.replay.hash` next to the recording and quits at the end; `run-replays.ps1` does all of this and keeps the output in `logs/`.
 
-## Record and replay a session recording
-
-```powershell
-$env:ROGUESQ_INPUT_RECORD = "$PWD\tools\debug\recordings\09-prisons-of-kessel\kessel.rec"
-.\build\Release\RogueSquadron64Recomp.exe
-```
-
-Launch without `ROGUESQ_BOOT_TARGET`, play from the title screen, then close the window. Replay with `ROGUESQ_INPUT_REPLAY` set to the same path, the same build and the same env settings. Replay overrides all controller-0 input from launch, holds the last input after the file ends, and closes the game when the recording ends.
-
-Session format: lines are `<ms> <vi> <poll> <buttons hex> <stick x> <stick y>` after the version header.
-
-- **v4** (written now): one line per input poll, full float precision. Replay serves the recorded sample nearest the current wall-clock time, so every input (mouse steering included) lands within half a poll (~8 ms) of when it was recorded and no lag builds up. The recorded stick values already include the mouse smoothing.
-- **v3** (older files, e.g. `kessel.rec`): written only on change and replayed by wall-clock `ms`, with the stick blended between close samples. Mouse steering drifts slightly between runs.
-
-Replay logs `[input-rec] ms=… vi=… recorded_vi=… poll=… recorded_poll=…` every 10 s. The game is not fully deterministic outside mission recordings, so a long session replay can still diverge from the recorded run.
+Several recordings play in one launch as a `;`-separated `ROGUESQ_LS_REPLAY` list, booted with `ROGUESQ_BOOT_TARGET=abort:<level>,<craft>` (the first recording's) and `ROGUESQ_NAV_CHAIN=1`. Set `ROGUESQ_LS_HASH_OUT` to a folder and each recording's `.replay.hash` is written there. Every entry must replay under the same staged mods.

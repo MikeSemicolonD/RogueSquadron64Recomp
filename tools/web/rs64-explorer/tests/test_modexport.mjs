@@ -567,9 +567,10 @@ await check('importing a model into a craft fills its body, empties the other un
   assert.deepEqual([...new Set(merged.faces[0].idx)].length, 4);
   assert.equal(bodyOf(RS64.hobImportCraft(orig, hob, square([0.5, 1]), { mat: pick.mat, plusZ: false })).faces.length, 2);
 
-  // Canopy and exhaust options. A model with the original's exact extent is placed 1:1, so markers land where they say.
+  // Canopy and exhaust options. A model with the original's exact extent (its plain parts: glow cards, flames and glass aren't
+  // imported) is placed 1:1, so markers land where they say.
   const stockParts = hob.objects[0].lods[0].flat();
-  const flat = stockParts.flatMap((p) => [...p.verts]);
+  const flat = stockParts.filter((p) => !p.name).flatMap((p) => [...p.verts]);
   const low = [0, 1, 2].map((a) => Math.min(...flat.filter((_, i) => i % 3 === a)));
   const high = [0, 1, 2].map((a) => Math.max(...flat.filter((_, i) => i % 3 === a)));
   const toDisplay = ([x, y, z]) => [x, -y, -z];
@@ -627,6 +628,16 @@ await check('importing a model into a craft fills its body, empties the other un
   assert.deepEqual(flameChanges.reduce((a, b) => a + b), 8, 'one flame of 8 vertices moved');
   assert.deepEqual(glowChanges.reduce((a, b) => a + b), 4, 'one glow of 4 vertices moved');
 
+  // Hardpoints (1/256 of vertex units): a trl_ marker takes every contrail point, an eng_ marker every engine glow point.
+  const points = (opts, prefix) => RS64.parseHOB(new DataView(RS64.hobImportCraft(orig, hob, box, { mat: pick.mat, plusZ: false, ...opts }).buffer))
+    .objects[0].hardpoints.filter((h) => h.name.startsWith(prefix)).flatMap((h) => h.points.map((q) => q.pos.map((c) => Math.round(c * 256))));
+  const trailAt = [1000, -200, -3000];
+
+  assert.equal(points({}, 'trl').length, 4);
+  assert.ok(points({ trails: [toDisplay(trailAt)] }, 'trl').every((p) => p.join() === trailAt.join()));
+  assert.ok(points({ engines: [toDisplay(target)] }, 'glw').every((p) => p.every((c, a) => Math.abs(c - target[a]) <= 1)));
+  assert.deepEqual(points({ engines: [toDisplay(target)] }, 'trl'), points({}, 'trl'), 'engines leave contrails alone');
+
   for (const p of parts)
     if (!p.name && p !== body)
       assert.equal(p.faces.length, 0);
@@ -637,7 +648,7 @@ await check('importing a model into a craft fills its body, empties the other un
     if (p.name)
       assert.deepEqual([...p.verts], [...before.find((q) => q.offset === p.offset).verts]);
 
-  // Fitted onto the X-wing: the largest dimension matches the original's.
+  // Fitted onto the X-wing: the largest dimension matches the original's plain parts (glow cards and flames reach past them).
   const ext = (list) => {
     const mn = [Infinity, Infinity, Infinity];
     const mx = [-Infinity, -Infinity, -Infinity];
@@ -648,7 +659,9 @@ await check('importing a model into a craft fills its body, empties the other un
     return Math.max(...mx.map((v, a) => v - mn[a]));
   };
 
-  assert.ok(Math.abs(ext([body]) - ext(before)) <= 2, `${ext([body])} vs ${ext(before)}`);
+  const plain = before.filter((p) => !p.name);
+
+  assert.ok(Math.abs(ext([body]) - ext(plain)) <= 2, `${ext([body])} vs ${ext(plain)}`);
 });
 
 const cuts = [...rom.assets.keys()].filter((p) => /^data\/cuts\/id\d+_/.test(p));
@@ -2829,10 +2842,11 @@ await check('change kinds by path', () => {
   for (const p of ['mod/lang/front.json', 'mod/lang/glyphs/italic35.bin', 'mod/lang/glyphs/FONTS.txt'])
     assert.equal(k(p), 'fonts', p);
 
-  for (const p of ['data/reb_stuff/atpt_walk', 'data/blueprints/xwing'])
+  // The hangar scene holds the ships, and a craft's HUD icon shows the craft, so both go with the models.
+  for (const p of ['data/reb_stuff/atpt_walk', 'data/blueprints/xwing', 'data/frontend/hangar/dat', 'data/ov/ov_xwing', 'data/ov/1v_red_wing'])
     assert.equal(k(p), 'models', p);
 
-  for (const p of ['data/ov/radar', 'data/frontend/hangar/dat'])
+  for (const p of ['data/ov/radar', 'data/frontend/factor/factor_HMT', 'data/ov/ov_font', 'data/ov/1v_2_torp', 'data/ov/ov_lockb', 'data/ov/ov_target'])
     assert.equal(k(p), 'ui', p);
 
   assert.equal(k('data/frontend/starwars/dat'), 'levels');
@@ -2998,7 +3012,7 @@ await check('native menus match the game', () => {
 
   assert.deepEqual(RS64.NATIVE_MENUS.game_settings.entries.map((e) => e.label.en), ['AUTO ROLL: ON', 'AUTO LEVEL: ON', 'FREE CAMERA: ON', 'CROSSHAIRS: ON', 'HIGH RESOLUTION', '', 'RESTORE DEFAULT SETTINGS', 'BACK']);
   assert.equal(RS64.NATIVE_MENUS.options.entries[3].spacer, true);
-  assert.equal(RS64.NATIVE_MENUS.options.max, 8);
+  assert.equal(RS64.NATIVE_MENUS.options.max, 12);
   assert.equal(RS64.NATIVE_MENUS.pause_game_settings.max, 16);
   assert.equal(RS64.NATIVE_MENUS.controller_settings.locked, undefined);
   assert.equal(RS64.NATIVE_MENUS.controller_settings.entries[0].y, 283);
@@ -3154,6 +3168,229 @@ await check('painted levels export their paint files raw and their HMP and _TEX 
   }
 
   assert.equal(new Set(files).size, 6);
+});
+
+await check('a grown map keeps the old ground and lights in place and continues the edge heights', async () => {
+  const orig = bytesOf(await rom.read('data/level/lv_0/hmp'));
+  const out = RS64.hmpResize(orig, 128, 120);
+  const a = RS64.hmpGrid(RS64.parseHMP(new DataView(orig.buffer, orig.byteOffset, orig.length)));
+  const ov = new DataView(out.buffer);
+  const b = RS64.hmpGrid(RS64.parseHMP(ov));
+  const at = (g, X, Y) => g.hts[Y * g.W + X];
+
+  assert.deepEqual([b.w, b.h, b.W, b.H], [128, 120, 513, 481]);
+
+  for (let Y = 0; Y < a.H; Y++)
+    for (let X = 0; X < a.W; X++)
+      assert.equal(at(b, X, Y), at(a, X, Y));
+
+  assert.equal(at(b, 400, 30), at(a, a.W - 1, 30));
+  assert.equal(at(b, 30, 400), at(a, 30, a.H - 1));
+  assert.equal(at(b, 500, 470), at(a, a.W - 1, a.H - 1));
+
+  const lights = (dv) => [...new Uint8Array(dv.buffer, dv.byteOffset + dv.getUint32(0x20), dv.getUint32(0x1C) - dv.getUint32(0x20))].join();
+  const od = new DataView(orig.buffer, orig.byteOffset, orig.length);
+
+  assert.equal(lights(ov), lights(od));
+  assert.equal(ov.getUint32(0x20) % 4, 0);
+  assert.throws(() => RS64.hmpResize(orig, 64, 72));
+});
+
+// A ship's special-button clip is written in the game's own model-animation format, so every stock clip must survive a parse/write.
+await check('stock model animations write back byte for byte', async () => {
+  const clips = ['reb_stuff/atpt_walk', 'reb_stuff/atpt_start', 'reb_stuff/atpt_stop', 'imp_stuff/atst_walk', 'imp_stuff/atst_stop', 'imp_stuff/atst_start', 'imp_stuff/atat_walk', 'imp_stuff/atat_die', 'imp_stuff/atat_start', 'imp_stuff/atat_stop'];
+
+  for (const c of clips)
+  {
+    const dv = await rom.read('data/' + c);
+    const orig = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
+
+    assert.deepEqual(RS64.writeAnim(RS64.parseAnim(dv)), orig, c);
+  }
+});
+
+// A glTF clip baked for a ship: a part's turn and move come through the import's half turn and scale, other parts hold their rest pose.
+await check('a ship clip bakes part turns and moves into the model\'s space', async () => {
+  const hob = RS64.parseHOB(await rom.read('data/pl_crafts/xwing_HOB'));
+  const obj = hob.objects[0];
+  const tris = [{ p: [[-1, -1, -2], [1, 1, 2], [0, 0, 0]] }];
+  const placement = RS64.craftImportPlacement(hob, tris, true, 0);
+  const deg = (10 * Math.PI) / 360;
+
+  const parts = new Map([[
+    obj.nodeNames.get('wngrot_a'),
+    {
+      origin: [0, 0, 0],
+      samples: [
+        { t: 0, q: [0, 0, 0, 1], d: [0, 0, 0] },
+        { t: 1, q: [0, 0, Math.sin(deg), Math.cos(deg)], d: [0, 0.5, 0] },
+      ]
+    }
+  ]]);
+
+  const clip = RS64.parseAnim(new DataView(RS64.craftClipBake(obj, placement, parts).buffer));
+
+  assert.equal(clip.tracks.length, obj.nodes.length - 1);
+  assert.deepEqual(clip.tracks[0].times, [0, 1]);
+  assert.ok(Math.abs(clip.tracks[0].rot[1][2] - Math.sin(deg)) < 1e-3 && Math.abs(clip.tracks[0].rot[1][3] - Math.cos(deg)) < 1e-3, 'a turn about z keeps its sign through the +Z half turn');
+  assert.ok(clip.tracks[0].pos[1][1] < -1, 'an upward move points down in the model (y is flipped)');
+  assert.equal(clip.tracks[1], null);
+  assert.deepEqual(clip.rest[1].rot, [0, 0, 0, 4096]);
+  assert.deepEqual(clip.rest[0].pivot, placement.place([0, 0, 0]).map((v) => Math.round(v) + 0));
+});
+
+// The game's asset loader decrypts koelsch_HMT before applying the patch and encrypts the result (asset_overrides.cpp naboo_cipher).
+await check('the Naboo Starfighter textures read decrypted, so a texture edit is a small patch of the plain file', async () => {
+  const path = 'data/pl_crafts/koelsch_HMT';
+  const plain = bytesOf(await rom.read(path)).slice();
+  const edited = plain.slice();
+
+  assert.equal(new DataView(plain.buffer).getUint32(4) % 4, 0, 'the HMT header decrypted');
+  edited.fill(0x5A, 0x400, 0x440);
+
+  const file = RS64.modAssetFile(path, plain, edited);
+
+  assert.equal(file.name, 'assets/pl_crafts/koelsch_HMT.bps');
+  assert.deepEqual(applyBPS(plain, file.data), edited);
+  assert.ok(file.data.length < 200, 'only the edit is patched');
+});
+
+await check('new ship: ships.json entry, hangar records moved to its spot, model named after it', async () => {
+  const ship = RS64.shipNew([], 'Red Wing!', 'xwing');
+
+  assert.deepEqual(ship, { id: 'red_wing', name: 'RED WING!', template: 'xwing', stop: RS64.SHIP_SPOTS[0].stop });
+
+  const ships = [ship];
+
+  for (let k = 1; k < RS64.SHIP_SPOTS.length; k++)
+  {
+    ships.push(RS64.shipNew(ships, 'Other', 'awing'));
+    assert.deepEqual(ships[k].stop, RS64.SHIP_SPOTS[k].stop, 'each ship takes the next free spot');
+  }
+
+  assert.equal(RS64.shipNew(ships, 'Other', 'awing'), null, 'no spot left');
+  assert.equal(new Set(ships.map((s) => s.id)).size, ships.length);
+  assert.equal(RS64.shipNew([], 'A very long name', 'awing').id, 'a_very_lo');
+  assert.equal(RS64.shipNew([], 'xwing', 'awing', ['xwing']).id, 'xwing_b');
+  assert.equal(RS64.shipNew([], 'Ship 1', 'awing').id, 'ship', 'no id ends in a digit, which the game splits off a model path');
+  assert.equal(RS64.shipNew([{ id: 'ship', stop: [9, 9] }, { id: 'ship_b', stop: [8, 8] }], 'Ship 2', 'awing').id, 'ship_c');
+  assert.equal(RS64.shipNew([], '2187', 'awing').id, 'ship');
+  assert.deepEqual(RS64.shipsParse(RS64.shipsWrite([ship])), [ship]);
+  assert.deepEqual(RS64.shipBehaviours(ship), ['sfoils'], 'a ship without a list has its template\'s');
+  assert.deepEqual(RS64.shipBehaviours({ ...ship, behaviours: ['aim'] }), ['aim']);
+  assert.deepEqual(RS64.shipBehaviours({ template: 'ywing' }), []);
+
+  assert.deepEqual(RS64.shipAliases(ship), [
+    ['data/pl_crafts/red_wing_HOB', 'data/pl_crafts/xwing_HOB'],
+    ['data/pl_crafts/red_wing_HMT', 'data/pl_crafts/xwing_HMT'],
+    ['data/pl_crafts/c_red_wing_HOB', 'data/pl_crafts/c_xwg_HOB'],
+    ['data/pl_crafts/c_red_wing_HMT', 'data/pl_crafts/c_xwg_HMT'],
+    ['data/ov/ov_red_wing', 'data/ov/ov_xwing'],
+    ['data/ov/1v_red_wing', 'data/ov/1v_xwing'],
+    ['data/blueprints/red_wing', 'data/blueprints/xwing'],
+    ['data/pl_crafts/s_red_wing', 'data/pl_crafts/shadows_TM']
+  ]);
+
+  // A blueprint takes new pixels as 4-bit intensity (brightness times alpha), two a byte, its header kept.
+  const bp = await rom.read('data/blueprints/xwing');
+  const bpSize = RS64.hudIconSize(bp);
+  const lit = new Uint8Array(bpSize.w * bpSize.h * 4).fill(255);
+
+  lit.fill(0, 4, 8);
+
+  const drawn = RS64.blueprintWrite(bp, lit);
+
+  assert.deepEqual([bpSize.w, bpSize.h], [64, 80]);
+  assert.equal(drawn[4 + bp.getUint32(4)], 0xF0, 'the first pixel lit, the second dark');
+  assert.deepEqual(drawn.subarray(0, 0x38), new Uint8Array(bp.buffer, bp.byteOffset, 0x38));
+
+  // A spot picked on the floor: at a stock craft's place the camera stops near its stock stop; moving a ship takes its old records out.
+  const stockDat = await rom.read('data/frontend/hangar/dat');
+  const xw = RS64.parseDAT(stockDat).items.find((i) => i.name === 'xwing').pos;
+  const xwSpot = RS64.shipSpotAt(stockDat, [xw[0], xw[2]]);
+
+  assert.ok(Math.abs(xwSpot.stop[0] - 0.828) < 0.06 && Math.abs(xwSpot.stop[1] - 0.7968) < 0.06, JSON.stringify(xwSpot.stop));
+
+  const once = RS64.shipHangarAdd(stockDat, ship);
+  const moved = RS64.shipHangarAdd(RS64.shipHangarRemove(once, ship.id), ship, RS64.shipSpotAt(once, [0, 25]));
+  const names = (b) => RS64.parseDAT(new DataView(b.buffer, b.byteOffset, b.byteLength)).items.map((i) => i.name).filter((n) => n.startsWith('red_wing'));
+
+  assert.deepEqual(names(moved).sort(), ['red_wing', 'red_wing_camstart', 'red_wing_camwatch', 'red_wing_route'], 'one set of records after a move');
+  assert.equal(RS64.parseDAT(new DataView(moved.buffer)).items.length, RS64.parseDAT(new DataView(once.buffer)).items.length);
+
+  // With the hangar scene, ships past the fixed spots get a free spot of their own, apart from the others, up to SHIP_MAX.
+  const many = [...ships];
+
+  while (many.length < RS64.SHIP_MAX)
+  {
+    const s = RS64.shipNew(many, 'More', 'awing', [], stockDat);
+
+    assert.ok(s?.pos, `ship ${many.length + 1} has its own spot`);
+    assert.ok(many.every((o) => Math.hypot(RS64.shipPos(o)[0] - s.pos[0], RS64.shipPos(o)[1] - s.pos[1]) > 5), JSON.stringify(s.pos));
+    many.push(s);
+  }
+
+  assert.equal(RS64.shipNew(many, 'More', 'awing', [], stockDat), null, 'the hangar is full');
+
+  // A ship's copy names its texture apart from the template's, at the same length.
+  const renamed = RS64.texFileRename(bp, '~1');
+  const nameAt = 4 + bp.getUint32(4 + 0x24);
+
+  assert.equal(new TextDecoder().decode(renamed.subarray(nameAt, nameAt + 6)), '~1xwi\0');
+  assert.equal(renamed.length, bp.byteLength);
+
+  // Every template's copies are real files, and the copies' names fit the game's 15-character file names.
+  for (const [t] of Object.entries(RS64.SHIP_TEMPLATES))
+    for (const [to, from] of RS64.shipAliases({ id: 'a_very_lo', template: t }))
+      assert.ok(rom.assets.has(from) && to.split('/').pop().length <= 15, `${t}: ${from} -> ${to}`);
+
+  // An icon takes new pixels as IA8 (intensity, then alpha, a nibble each), its header kept.
+  const icon = await rom.read('data/ov/ov_xwing');
+  const { w, h } = RS64.hudIconSize(icon);
+  const painted = RS64.hudIconWrite(icon, new Uint8Array(w * h * 4).fill(255));
+
+  assert.deepEqual([w, h], [32, 32]);
+  assert.equal(painted.length, icon.byteLength);
+  assert.equal(painted[4 + icon.getUint32(4)], 0xFF);
+  assert.deepEqual(painted.subarray(0, 0x38), new Uint8Array(icon.buffer, icon.byteOffset, 0x38));
+
+  assert.equal(RS64.modChangeKind('mod/ships.json'), 'models');
+  assert.equal(RS64.modChangeKind('mod/assets/pl_crafts/v_red_wing'), 'models');
+
+  // Every spot: the ship stands on the camera's line to it, as far from the camera as its template from its own, at the template's
+  // height; its route and camera points keep their distances to it (carried and turned with it).
+  const hangar = await rom.read('data/frontend/hangar/dat');
+  const cam = RS64.splineAt(hangar, RS64.parseDAT(hangar).items.find((i) => i.name === 'camroute_0'));
+  const flat = (a, b) => Math.hypot(a[0] - b[0], a[2] - b[2]);
+
+  for (const s of ships)
+  {
+    const dat = RS64.shipHangarAdd(await rom.read('data/frontend/hangar/dat'), s);
+    const dv = new DataView(dat.buffer, dat.byteOffset, dat.byteLength);
+    const items = RS64.parseDAT(dv).items;
+    const item = (n) => items.find((i) => i.name === n);
+    const t = RS64.SHIP_TEMPLATES[s.template];
+    const spot = RS64.SHIP_SPOTS.find((x) => x.stop === s.stop || x.stop.join() === s.stop.join());
+    const from = item(t.record).pos;
+    const to = item(s.id).pos;
+    const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+
+    const eye = cam(s.stop[0]);
+    const side = (to[0] - eye[0]) * (spot.pos[1] - eye[2]) - (to[2] - eye[2]) * (spot.pos[0] - eye[0]);
+
+    assert.ok(Math.abs(flat(to, eye) - flat(from, cam(t.u))) < 1e-2 && Math.abs(side) < 1e-2 && Math.abs(to[1] - from[1]) < 1e-3, s.id);
+
+    for (const [a, b] of [[`${t.record}_route`, `${s.id}_route`], [`camstart_${t.cam}`, `${s.id}_camstart`], [`camwatch_${t.cam}`, `${s.id}_camwatch`]])
+      assert.ok(Math.abs(dist(item(a).pos, from) - dist(item(b).pos, to)) < 1e-2, b);
+
+    const pts = (n) => RS64.splinePoints(dv, item(n));
+
+    pts(`${t.record}_route`).forEach((p, k) => assert.ok(Math.abs(dist(p, from) - dist(pts(`${s.id}_route`)[k], to)) < 1e-2, 'route point ' + k));
+  }
+
+  const hob = RS64.hobSetObjectName(await rom.read('data/pl_crafts/xwing_HOB'), 'red_wing');
+
+  assert.equal(RS64.parseHOB(new DataView(hob.buffer)).objects?.[0]?.name ?? new TextDecoder().decode(hob.subarray(8, 16)), 'red_wing');
 });
 
 if (failed) { console.log(`${failed} failed`); process.exit(1); }

@@ -38,6 +38,7 @@
 #include "util/mips_call.h"
 #include "util/rdram_words.h"
 #include "util/host_ram_map.h"
+#include "hle/rt64_rs64_host.h"
 #include "hle/rt64_rs64_hud.h"
 #include "hle/rt64_rs64_transition.h"
 
@@ -63,8 +64,6 @@ static float env_mult(const char* name, float def) {
 
     return (m >= 0.25f && m <= 8.0f) ? m : def;
 }
-
-extern "C" int rs64_static_terrain_mode(void);
 
 // Draw distance multiplier for the camera far plane and object culls: the in-game DRAW DISTANCE setting (roguesq_video.json), live; ROGUESQ_DRAW_DIST overrides.
 // Capped while the game draws its own terrain, whose grid breaks up further out.
@@ -263,7 +262,7 @@ extern "C" void rs64_fog_probe(uint8_t* rdram)
 // Level terrain cell budget scale, evaluated at each level load: ROGUESQ_TGRID_BUDGET_MULT (1-2), default 2 when terrain distance is 2x or more.
 // Stock under the terrain pass, whose grid keeps the stock reach: a bigger budget moves the game's heap allocations and so the game state.
 // 3x exhausts the game heap and the level load stalls; N is also capped at 6553 (u16 vertex-block indices up to 10N-4).
-// Set around setupCutsceneLevel's loadLevelAssets call (the classifier may not report "cinematic" yet at load); cutscene levels keep the stock budget while cutscenes keep their own view, doubled on legacy terrain in widescreen, whose extra cells run the stock mesh pool dry.
+// Set around setupCutsceneLevel's loadLevelAssets call (the classifier may not report "cinematic" yet at load); cutscene levels keep the stock budget while cutscenes keep their own view, doubled on legacy terrain, whose full frame (no TV overscan, wider in widescreen) runs the stock mesh pool dry.
 static bool s_cutscene_level_load = false;
 extern "C" void rs64_cutscene_level_load(int on) {
     s_cutscene_level_load = on != 0;
@@ -274,8 +273,7 @@ extern "C" uint32_t rs64_tgrid_budget(uint32_t original)
 
     static const int s_env = env_int("ROGUESQ_TGRID_BUDGET_MULT", 0);
     const bool cutscene_level = s_cutscene_level_load && game_owns_view_setting();
-    const bool wide = !terrain_pass_on() && rs64_cull_widen() > 1.0f;
-    const uint32_t s_mult = cutscene_level ? (wide ? 2u : 1u) : (uint32_t)std::clamp(s_env > 0 ? s_env : ((!terrain_pass_on() && terrain_dist_setting() >= 2.0f) ? 2 : 1), 1, 2);
+    const uint32_t s_mult = cutscene_level ? (terrain_pass_on() ? 1u : 2u) : (uint32_t)std::clamp(s_env > 0 ? s_env : ((!terrain_pass_on() && terrain_dist_setting() >= 2.0f) ? 2 : 1), 1, 2);
     const uint32_t n = original * s_mult;
     static const bool s_log = env_on("ROGUESQ_LOG_TERRAIN_GRID");
 
@@ -388,18 +386,13 @@ extern "C" int rs64_vr_cockpit_view(void)
     return (steady_ms() - s_cockpit_ms.load(std::memory_order_relaxed)) < 250 ? 1 : 0;
 }
 
-// VR, between binPolygonIntoTerrainGrid and streamTerrainGridCellsByDistance: every binned cell gets the full altitude band (highest 127, lowest -128).
-// The bin writes the band the game camera can see; looking up, it sits above the ground and streaming dropped every cell, so the head looking down saw none.
-extern "C" void rs64_vr_terrain_heights(uint8_t* rdram)
+// Between binPolygonIntoTerrainGrid and streamTerrainGridCellsByDistance: every binned cell gets the full altitude band (highest 127, lowest -128).
+// The bin writes the band the game camera can see; looking up (VR head down, or a climb past the Sullust capacitor), it sits above the ground and streaming dropped the ground below.
+extern "C" void rs64_terrain_full_band(uint8_t* rdram)
 {
 
     constexpr uint32_t kCells = 128u * 128u;
     constexpr int8_t kUncovered = -128;
-
-    if (!rs64_vr_active())
-    {
-        return;
-    }
 
     int8_t* top =reinterpret_cast<int8_t*>(rdram + (rs64_tgrid_base(0x80130DB0u) - 0x80000000u));
     int8_t* bottom = reinterpret_cast<int8_t*>(rdram + (rs64_tgrid_base(0x80131DB0u) - 0x80000000u));
@@ -967,11 +960,27 @@ extern "C" void rs64_neutralize_matpool_cimg(uint8_t* rdram, uint32_t dl_phys) {
     }
 }
 
-// Runs addNpcToVisibilityBucket again with the display widening on, for an object the stock test rejected: it joins the draw list and its LOD updates, but the fields game logic reads go back to their stock values.
-extern "C" int rs64_npc_draw_only_pass(uint8_t* rdram, recomp_context* ctx, const uint32_t* args)
+// The mission frame each unit last failed isNpcWithinActiveReferenceRange, keyed by the unit pointer it was tested with.
+static std::unordered_map<uint32_t, uint32_t> s_unit_out_of_range;
+
+extern "C" void rs64_unit_range_note(uint8_t* rdram, uint32_t unit, int in_range)
 {
 
-    if (!(rs64_cull_widen() > 1.0f) && !(rs64_draw_dist() > 1.0f) && !(rs64_shadow_cull_margin() > 1.0f) && !(rs64_shadow_keep_dist() > 0.0f))
+    if (in_range) {
+        s_unit_out_of_range.erase(unit);
+    } else {
+        s_unit_out_of_range[unit] = rw(rdram, 0x8013889Cu);
+    }
+}
+
+// Runs addNpcToVisibilityBucket again with the display widening on, for an object the stock test rejected: it joins the draw list and its LOD updates, but the fields game logic reads go back to their stock values.
+static int npc_draw_only_call(uint8_t* rdram, recomp_context* ctx, const uint32_t* args)
+{
+
+    // In a recording or replay the active range stays stock, so a unit out of it is destroyed and respawned at its start every 21 frames: draw it as the stock far plane did, not at all.
+    const auto out = s_unit_out_of_range.find(args[2]);
+
+    if (rs64_ls_session() && out != s_unit_out_of_range.end() && rw(rdram, 0x8013889Cu) - out->second <= 2u)
     {
         return 0;
     }
@@ -997,6 +1006,59 @@ extern "C" int rs64_npc_draw_only_pass(uint8_t* rdram, recomp_context* ctx, cons
     ww(rdram, model + 0x3Cu, modelFrame);
 
     return drawn != 0;
+}
+
+extern "C" int rs64_npc_draw_only_pass(uint8_t* rdram, recomp_context* ctx, const uint32_t* args)
+{
+
+    if (!(rs64_cull_widen() > 1.0f) && !(rs64_draw_dist() > 1.0f) && !(rs64_shadow_cull_margin() > 1.0f) && !(rs64_shadow_keep_dist() > 0.0f))
+    {
+        return 0;
+    }
+
+    return npc_draw_only_call(rdram, ctx, args);
+}
+
+// Whether the model's box (min corner at +0x5C, max at +0x68) reaches the view, by the game's own box test with the object's pose made into a matrix the way the draw path does.
+// args are addNpcToVisibilityBucket's: view, object, pose (position, forward, up) and scale.
+static bool npc_box_visible(uint8_t* rdram, recomp_context* ctx, const uint32_t* args)
+{
+
+    constexpr uint32_t kMat34FromPose = 0x80059B50u;
+    constexpr uint32_t kProjectBoxToView = 0x80065E98u;
+    const uint32_t model = rw(rdram, args[1]);
+
+    for (uint32_t i = 0; i < 3; ++i)
+    {
+        if (!(rf(rdram, model + 0x68u + 4u * i) > rf(rdram, model + 0x5Cu + 4u * i)))
+        {
+            return false;
+        }
+    }
+
+    const uint32_t matrix = RS64_HR_BOX_MATRIX;
+
+    rs64::mips::mips_call(rdram, ctx, kMat34FromPose, { matrix, args[2], args[3] });
+
+    return rs64::mips::mips_call(rdram, ctx, kProjectBoxToView, { args[0], matrix, model + 0x5Cu, model + 0x68u }, { 0u, 0u }).v0 != 0;
+}
+
+// An object the sphere test rejected while part of its model box is on screen (a walker's head, a wingtip) still draws. ROGUESQ_NPC_BOX_CULL=0 disables.
+extern "C" int rs64_npc_box_pass(uint8_t* rdram, recomp_context* ctx, const uint32_t* args)
+{
+
+    static const bool s_on = env_on("ROGUESQ_NPC_BOX_CULL", true);
+
+    if (!s_on || !npc_box_visible(rdram, ctx, args))
+    {
+        return 0;
+    }
+
+    rs64_npc_box_visible_mark(1);
+    const int drawn = npc_draw_only_call(rdram, ctx, args);
+    rs64_npc_box_visible_mark(0);
+
+    return drawn;
 }
 
 // Whether a hill stands between the camera and the world position at pos: the game's terrain height at points along the line. Debug only (ROGUESQ_LOG_POP).
@@ -1078,12 +1140,17 @@ extern "C" void rs64_pop_note(uint8_t* rdram, recomp_context* ctx, uint32_t obj,
     }
 }
 
-// Adds display list chunks in free host RAM to the game's free list when a mod replaces a player craft, whose model can outgrow the game's pool.
-// Never for stock craft: effects spawn only while enough chunks are free, so more of them would change stock replays.
+// Adds display list chunks in free host RAM to the game's free list when a mod replaces a player craft or adds hangar ships, whose models can
+// outgrow the game's pool. Never for stock craft: effects spawn only while enough chunks are free, so more of them would change stock replays.
 extern "C" void rs64_grow_dl_pool(uint8_t* rdram)
 {
 
     static const bool s_on = [] {
+
+        if (rs64_ships_count() > 0)
+        {
+            return true;
+        }
 
         static constexpr const char* kCrafts[] = {
             "pl_crafts/xwing_HOB", "pl_crafts/ywing_HOB", "pl_crafts/awing_HOB", "pl_crafts/vwing_HOB", "pl_crafts/rmobil_HOB",
@@ -1108,6 +1175,12 @@ extern "C" void rs64_grow_dl_pool(uint8_t* rdram)
 
     uint32_t head = rd(kFreeHead);
 
+    // The hook runs twice per pool build; linking the chunks again would close the list into a loop.
+    if (head >= kStart && head < RS64_HR_DL_CHUNKS_END)
+    {
+        return;
+    }
+
     for (uint32_t i = 0; i < kCount; ++i)
     {
         const uint32_t c = kStart + i * kChunk;
@@ -1124,6 +1197,8 @@ extern "C" void rs64_grow_dl_pool(uint8_t* rdram)
     }
 
     wr(kFreeHead, head);
+    rs64_snapshot_add_range(kStart - 0x80000000u, RS64_HR_DL_CHUNKS_END - 0x80000000u);
+
     fprintf(stderr, "[dl-pool] added %u chunks at %08X\n", kCount, kStart);
 }
 
@@ -1213,12 +1288,25 @@ static void rate_log(float dt)
 }
 
 // ROGUESQ_FIXED_STEP=1: game time advances one paced frame per frame instead of following real time (timeSnapshotFiller hook), so frame numbers repeat run to run.
+// Also on at any speed but 1: the scaled VI jitter measures most frames just under one tick, which the menus and cutscenes count as no time passing.
 extern "C" int rs64_fixed_step(void)
 {
 
     static const bool s_on = env_on("ROGUESQ_FIXED_STEP");
 
-    return s_on ? 1 : 0;
+    return (s_on || ultramodern::get_speed() != 1.0) ? 1 : 0;
+}
+
+// Mission logic rate from ROGUESQ_GAME_HZ, VR or the TARGET FPS setting.
+extern "C" int rs64_logic_hz(void)
+{
+
+    static const int s_env = env_int("ROGUESQ_GAME_HZ", 0);
+
+    const int display_hz = (int)ultramodern::get_display_refresh_rate();
+    const int vr_hz = rs64_vr_game_hz();
+
+    return s_env > 0 ? std::clamp(s_env, 30, 240) : (vr_hz > 0 ? std::clamp(vr_hz, 30, 240) : rs64::rate::logic_hz(rs64::video::frame_interpolation_on(), rs64::video::target_fps(display_hz)));
 }
 
 // Each mission frame, once its dt is final; returns the dt the frame uses. 0x80128EAF is the game's minimum VIs per frame: 2 = 30 fps.
@@ -1226,17 +1314,16 @@ extern "C" int rs64_fixed_step(void)
 extern "C" float rs64_rate_frame(uint8_t* rdram, float dt)
 {
 
-    static const int s_env = env_int("ROGUESQ_GAME_HZ", 0);
     static const int s_sub = std::clamp(env_int("ROGUESQ_VI_SUBTICKS", 4), 1, 8);
     static const bool s_log = env_on("ROGUESQ_LOG_RATE");
     static auto s_last = std::chrono::steady_clock::now();
 
     g_rate_frame_seen = true;
 
-    const int display_hz = (int)ultramodern::get_display_refresh_rate();
-    const int vr_hz = rs64_vr_game_hz();
-    const int hz = s_env > 0 ? std::clamp(s_env, 30, 240) : (vr_hz > 0 ? std::clamp(vr_hz, 30, 240) : rs64::rate::logic_hz(rs64::video::frame_interpolation_on(), rs64::video::target_fps(display_hz)));
-    const bool on = hz > 30 && !rs64_ls_session() && !rs64::ls::demo_active(rdram) && rs64::host::flag("ghost_mode") == 0;
+    // A lockstep session runs at its recording's rate.
+    const int ls_hz = rs64_ls_hz();
+    const int hz = ls_hz > 0 ? ls_hz : rs64_logic_hz();
+    const bool on = hz > 30 && !rs64::ls::demo_active(rdram) && rs64::host::flag("ghost_mode") == 0;
     const int sub = on ? s_sub : 1;
     const auto now = std::chrono::steady_clock::now();
     const float real = std::chrono::duration<float>(now - s_last).count();
@@ -1251,9 +1338,17 @@ extern "C" float rs64_rate_frame(uint8_t* rdram, float dt)
     if (sub > 1 && real > 0.0f && real <= 0.1f && !rs64_fixed_step())
     {
         s_smooth = s_smooth > 0.0f ? s_smooth + (real - s_smooth) * 0.1f : real;
-        s_debt = std::clamp(s_debt + real, -0.05f, 0.05f + s_smooth);
-        dt = std::clamp(s_smooth + (s_debt - s_smooth) * 0.05f, 0.25f * s_smooth, 4.0f * s_smooth);
-        s_debt -= dt;
+
+        if (!rs64::rate::keeps_up(s_smooth, hz))
+        {
+            s_debt = 0.0f;
+        }
+        else
+        {
+            s_debt = std::clamp(s_debt + real, -0.05f, 0.05f + s_smooth);
+            dt = std::clamp(s_smooth + (s_debt - s_smooth) * 0.05f, 0.25f * s_smooth, 4.0f * s_smooth);
+            s_debt -= dt;
+        }
     }
     else
     {
@@ -1261,6 +1356,7 @@ extern "C" float rs64_rate_frame(uint8_t* rdram, float dt)
         s_debt = 0.0f;
     }
 
+    dt = rs64_ls_rate_dt(dt);
     rs64::rate::update(g_rate, dt, on);
     rs64::mips::wb(rdram, 0x80128EAFu, on ? (uint8_t)sub : 2);
     ultramodern::set_vi_rate(on ? (uint32_t)(hz * sub) : 60u);

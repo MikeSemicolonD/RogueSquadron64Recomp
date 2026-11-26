@@ -10,7 +10,50 @@ This page is for the maintainer who runs the release pipeline. [.github/workflow
 | macOS zip: one universal `.app`, arm64 + x86_64 (untested on a Mac) | Windows runner, cross-built in WSL from the same recompiled code |
 | Android arm64 APK | Windows runner, Gradle, from the same recompiled code |
 
-Every zip and tarball carries `README.txt` ([ci/release-readme.txt](../../ci/release-readme.txt)) and the repo's `LICENSE` as `LICENSE.txt`; the APK is a single file.
+Every zip and tarball carries `README.txt` ([ci/release-readme.txt](../../ci/release-readme.txt)) and the repo's `LICENSE` as `LICENSE.txt`; the APK is a single file. The Windows zips and the Linux tarball also carry [recomplauncher.json](../../recomplauncher.json), the manifest RecompLauncher reads to find the ROM, start the game and show its settings (schema: `https://recomplauncher.com/schema/recomplauncher.json`).
+
+## Package contents
+
+No package holds a ROM. Mods are the `desktop` entries in [mods/platforms.json](../../mods/platforms.json) that built (`steam-relay` needs the Steamworks SDK on the runner).
+
+Windows (`RogueSquadron64Recomp-windows-<x64|x86>-<ver>.zip`), files at the zip root with no top folder:
+
+```text
+RogueSquadron64Recomp.exe
+SDL2.dll  dxil.dll  dxcompiler.dll
+d3d11_shader_cache/
+mods/
+README.txt  LICENSE.txt  NOTICES.txt  recomplauncher.json
+licenses/  video-presets/
+```
+
+Linux (`RogueSquadron64Recomp-linux-x64-<ver>.tar.xz`, [tools/release/package-linux.sh](../../tools/release/package-linux.sh)):
+
+```text
+RogueSquadron64Recomp-linux-x64-<ver>/
+  RogueSquadron64Recomp      stripped
+  run.sh                     sets LD_LIBRARY_PATH=lib and starts the game
+  install-desktop.sh         adds a menu entry and icon
+  rs64recomp.png
+  lib/                       ldd dependencies minus glibc, Vulkan and the GPU/X11/Wayland libraries
+  mods/                      .so files stripped
+  README.txt  LICENSE.txt  NOTICES.txt  recomplauncher.json
+  licenses/  video-presets/
+```
+
+macOS (`RogueSquadron64Recomp-macos-universal-<ver>.zip`, [tools/release/macos/package.sh](../../tools/release/macos/package.sh)):
+
+```text
+RogueSquadron64Recomp-macos-universal-<ver>/
+  RogueSquadron64Recomp.app/Contents/
+    Info.plist
+    MacOS/RogueSquadron64Recomp      lipo universal, ad-hoc signed
+    MacOS/libSDL2-2.0.0.dylib
+    Resources/rs64.icns
+    Resources/mods/                  copied to Application Support on launch
+  README.txt  LICENSE.txt  NOTICES.txt
+  licenses/  video-presets/
+```
 
 ## Making a release
 

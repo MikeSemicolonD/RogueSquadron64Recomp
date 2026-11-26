@@ -43,6 +43,21 @@
             "detail": "Release exe. POST_BUILD assembles a clean build/dist/ with just the exe + DLLs + menu json. Needs a ClangCL cache: cmake -B build -T ClangCL. Copy rogue_squadron.z64 next to the exe to run."
         },
         {
+            "label": "Build: Regenerate + RogueSquadron64Recomp",
+            "type": "shell",
+            "command": "cmake --build build --config Debug --target regen_funcs; if ($?) { cmake --build build --parallel --config ${input:rsConfig} --target RogueSquadron64Recomp }",
+            "linux": {
+                "command": "cmake --build build --config Debug --target regen_funcs && cmake --build build --parallel --config ${input:rsConfig} --target RogueSquadron64Recomp",
+                "problemMatcher": "$gcc"
+            },
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "build",
+            "problemMatcher": "$msCompile",
+            "detail": "Run after editing rogue_squadron.toml: regenerates the recompiled code, then builds the game."
+        },
+        {
             "label": "Build: VR (Release)",
             "type": "shell",
             "command": "cmake -B build-vr -G 'Visual Studio 17 2022' -T ClangCL -DRS64_OPENXR=ON -DRS64_MCP=${input:vrMcp}; if ($?) { cmake --build build-vr --parallel --config Release --target RogueSquadron64Recomp }",
@@ -383,6 +398,28 @@
             "detail": "Builds Release, then captures a new smoke test baseline in dumps/smoke/baseline (1-1.5 h). Look it over before comparing against it."
         },
         {
+            "label": "Test: FPS check",
+            "type": "shell",
+            "command": "python tools/debug/smoke/smoke.py run --sections perf --filter perf_level03_ultra; python tools/debug/smoke/smoke.py compare",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "dependsOn": "Build: RogueSquadron64Recomp (Release, MCP)",
+            "problemMatcher": [],
+            "detail": "Builds Release, then measures the frame rate of level 3 on the ultra preset against the smoke test baseline (about 80 s). Read the perf_level03_ultra line."
+        },
+        {
+            "label": "Test: Memory leak check",
+            "type": "shell",
+            "command": "python tools/debug/smoke/smoke.py run --sections memory; python tools/debug/smoke/smoke.py compare",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "dependsOn": "Build: RogueSquadron64Recomp (Release, MCP)",
+            "problemMatcher": [],
+            "detail": "Builds Release, then plays level 3 six times in one launch and fails if the game's memory keeps growing from one play to the next. Read the memory_level03 line."
+        },
+        {
             "label": "Test: Clean smoke test output",
             "type": "shell",
             "command": "python tools/debug/smoke/smoke.py clean",
@@ -395,7 +432,7 @@
         {
             "label": "Record: Input recording (pick level / craft)",
             "type": "shell",
-            "command": "& .\\tools\\debug\\recordings\\record.ps1 -Level ${input:rsRecLevel} -Craft '${input:rsCraft}' -Kind ${input:rsRecKind} -Name '${input:rsRecName}' -Config ${input:rsRecConfig}",
+            "command": "& .\\tools\\debug\\recordings\\record.ps1 -Level ${input:rsRecLevel} -Craft '${input:rsCraft}' -Name '${input:rsRecName}' -Config ${input:rsRecConfig}",
             "options": {
                 "cwd": "${workspaceFolder}",
                 "shell": {
@@ -404,7 +441,7 @@
                 }
             },
             "problemMatcher": [],
-            "detail": "Record controller input into tools/debug/recordings/<id>-<mission>/ (folder created if missing). Mission = lockstep .rec + .hash baseline, boots straight into the level; session = from launch with the level forced. Blank name = <mission>_<timestamp>."
+            "detail": "Boots straight into the level and records the mission into tools/debug/recordings/<id>-<mission>/ (.rec + .hash) at your frame rate. Blank name = <mission>_<timestamp>."
         },
         {
             "label": "Record: Co-op client recording (you fly player 2)",
@@ -437,7 +474,7 @@
         {
             "label": "IDE: Refresh clangd compile database",
             "type": "shell",
-            "command": "$vs = 'C:/Program Files/Microsoft Visual Studio/2022/Community'; Import-Module \"$vs/Common7/Tools/Microsoft.VisualStudio.DevShell.dll\"; Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64' | Out-Null; cmake -S . -B build-ide -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl -DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+            "command": "$vs = 'C:/Program Files/Microsoft Visual Studio/2022/Community'; Import-Module \"$vs/Common7/Tools/Microsoft.VisualStudio.DevShell.dll\"; Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64' | Out-Null; cmake -S . -B build-ide -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DRS64_OPENXR=ON",
             "options": {
                 "cwd": "${workspaceFolder}",
                 "shell": {
@@ -446,7 +483,7 @@
                 }
             },
             "linux": {
-                "command": "cmake -S . -B build-ide -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+                "command": "cmake -S . -B build-ide -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DRS64_OPENXR=ON",
                 "options": {
                     "cwd": "${workspaceFolder}",
                     "shell": {
@@ -844,6 +881,18 @@
             "detail": "Copies the ROM into the remote folder next to run.sh. ssh asks for the password in this terminal unless a key is set up."
         },
         {
+            "label": "Linux: Install Flatpak on remote machine",
+            "type": "process",
+            "command": "wsl.exe",
+            "args": [
+                "-d", "${input:wslDistro}",
+                "-e", "bash", "-lc",
+                "cd \"$(wslpath '${workspaceFolder}')\" && bash tools/release/linux/deploy-remote.sh '${input:flatpakSource}' '${input:remoteUser}' '${input:remoteHost}'"
+            ],
+            "problemMatcher": [],
+            "detail": "Installs the game's Flatpak on user@host, replacing the installed one and keeping its saves, settings and mods. Given a folder, it picks the newest Flatpak in it built for that machine's CPU. ssh asks for the password in this terminal unless a key is set up."
+        },
+        {
             "label": "Build (Linux cross, WSL): tarball + AppImage",
             "type": "process",
             "command": "wsl.exe",
@@ -1162,19 +1211,9 @@
                 { "label": "16 Beggar's Canyon (bonus)", "value": "16" },
                 { "label": "17 The Death Star Trench Run (bonus)", "value": "17" },
                 { "label": "18 The Battle of Hoth (bonus)", "value": "18" },
-                { "label": "20 CHICKEN (AT-ST, mission recordings only)", "value": "20" }
+                { "label": "20 CHICKEN (AT-ST)", "value": "20" }
             ],
             "default": "0"
-        },
-        {
-            "id": "rsRecKind",
-            "type": "pickString",
-            "description": "Recording kind",
-            "options": [
-                { "label": "Mission (lockstep, .hash baseline, boots into the level)", "value": "mission" },
-                { "label": "Session (from launch, menus included)", "value": "session" }
-            ],
-            "default": "mission"
         },
         {
             "id": "rsRecName",
@@ -1276,6 +1315,12 @@
             "type": "promptString",
             "description": "Package to deploy (Windows or WSL path)",
             "default": "build/release/rs64-linux-arm64.tar.xz"
+        },
+        {
+            "id": "flatpakSource",
+            "type": "promptString",
+            "description": "Flatpak to install, or a folder to take the newest one from",
+            "default": "build/packages"
         },
         {
             "id": "remoteHost",

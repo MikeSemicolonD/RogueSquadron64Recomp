@@ -130,6 +130,10 @@ def _set_u8(buf, kseg0, val):
     buf[kseg0 - 0x80000000] = val & 0xFF
 
 
+def _set_u16(buf, kseg0, val):
+    buf[kseg0 - 0x80000000: kseg0 - 0x80000000 + 2] = int(val & 0xFFFF).to_bytes(2, "big")
+
+
 def _set_u32(buf, kseg0, val):
     buf[kseg0 - 0x80000000: kseg0 - 0x80000000 + 4] = int(val & 0xFFFFFFFF).to_bytes(4, "big")
 
@@ -151,25 +155,72 @@ def test_classify_real_descriptor_states():
     _set_u32(b, 0x80130B50, 0x0000003B)   # bit 0x20 set
     assert classify(m, b) == "attract.demo"
 
-    # cinematic: valid cineStatePtr
+    # cinematic: cinematic overlay, valid cineStatePtr
     b = _blank_rdram()
+    _set_u32(b, 0x800375B0, 2)
     _set_u32(b, 0x800B0934, 0x800D9780)
     assert classify(m, b) == "cinematic"
 
-    # menu main page: valid gCurrentMenuData, menu id 0
+    # a mission's opening cutscene: the cinematic overlay over stale SELECT GAME menu data
+    _set_u32(b, 0x800CE730, 0x801BB490)
+    _set_u8(b, 0x800CE734, 1)
+    _set_u8(b, 0x800CDAC4, 4)
+    _set_u16(b, 0x800CFF50, 0x0B)
+    assert classify(m, b) == "cinematic"
+
+    # menu main page: menu overlay, valid gCurrentMenuData, menu id 0, the menu tree screen
     b = _blank_rdram()
+    _set_u32(b, 0x800375B0, 1)
     _set_u32(b, 0x800CE730, 0x800A5FD4)
     _set_u8(b, 0x800CE734, 0)
+    _set_u16(b, 0x800CFF50, 2)
     assert classify(m, b) == "menu.main"
+
+    # SELECT GAME on the menu tree screen; SELECT LEVEL's screen while bridgeMenuState is still 0 is level select
+    _set_u8(b, 0x800CE734, 1)
+    _set_u16(b, 0x800CFF50, 2)
+    assert classify(m, b) == "menu.select_game"
+    _set_u16(b, 0x800CFF50, 1)
+    assert classify(m, b) == "menu.level_select"
+
+    # the hangar and its way out to the opening cutscene (screen 0x0B); its way in (screen 1) is still SELECT LEVEL
+    _set_u8(b, 0x800CDAC4, 4)
+    for screen in (0, 0x0B):
+        _set_u16(b, 0x800CFF50, screen)
+        assert classify(m, b) == "menu.hangar"
+    _set_u16(b, 0x800CFF50, 1)
+    assert classify(m, b) == "menu.level_select"
+    _set_u8(b, 0x800CDAC4, 3)
+    _set_u16(b, 0x800CFF50, 1)
+    assert classify(m, b) == "menu.level_select"
+
+    # the results screen after a mission: menu data cleared, bridgeMenuState left at the hangar's 4
+    b = _blank_rdram()
+    _set_u32(b, 0x800375B0, 1)
+    _set_u8(b, 0x800CDAC4, 4)
+    _set_u16(b, 0x800CFF50, 3)
+    assert classify(m, b) == "menu.results"
+
+    # the SHOWROOM hub runs its own screen (0x0A), even with bridgeMenuState left at the hangar's 4
+    _set_u32(b, 0x800CE730, 0x80198A72)
+    _set_u8(b, 0x800CE734, 0x0A)
+    _set_u16(b, 0x800CFF50, 0x0A)
+    assert classify(m, b) == "menu.showroom"
+    _set_u32(b, 0x800CE730, 0x800A5FD4)
+    _set_u8(b, 0x800CE734, 0x0B)
+    assert classify(m, b) == "menu.concert_hall"
 
     # menu options page: menu id 2 (child beats parent)
     b = _blank_rdram()
+    _set_u32(b, 0x800375B0, 1)
     _set_u32(b, 0x800CE730, 0x800A5FD4)
     _set_u8(b, 0x800CE734, 2)
+    _set_u16(b, 0x800CFF50, 2)
     assert classify(m, b) == "menu.options"
 
     # menu resident but an unmapped id -> parent "menu"
     b = _blank_rdram()
+    _set_u32(b, 0x800375B0, 1)
     _set_u32(b, 0x800CE730, 0x800A5FD4)
     _set_u8(b, 0x800CE734, 99)
     assert classify(m, b) == "menu"

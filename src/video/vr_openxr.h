@@ -20,6 +20,9 @@ bool start_session(RT64::Application& app);
 // A headset session was created (it may not be running yet).
 bool has_session();
 
+// The runtime is Meta's (Link or the XR Simulator); SteamVR switches the Windows default output to its headset itself.
+bool meta_runtime();
+
 // On quit: ends the VR session and, once one was started, the process (Windows). No-op when running flat.
 void quit();
 

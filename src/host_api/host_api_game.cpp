@@ -33,6 +33,7 @@
 
 extern "C" void rs64_register_builtin_hooks();
 extern "C" void rs64_camera_shots_register_service();
+extern "C" void rs64_ships_register_service(uint8_t* rdram);
 extern "C" void rs64_register_builtin_late_hooks();
 extern "C" void osYieldThread_recomp(uint8_t*, recomp_context*);
 extern "C" void rs64_menu_request_quit(void);
@@ -335,6 +336,7 @@ void init_once(uint8_t* rdram) {
     rs64_register_builtin_hooks();
     rs64::host::add_hook(RS64_HOOK_MENU_PILOT_CHOSEN, pilot_chosen, nullptr);
     rs64_camera_shots_register_service();
+    rs64_ships_register_service(rdram);
     init_mods(rdram);
 
 #ifdef __EMSCRIPTEN__

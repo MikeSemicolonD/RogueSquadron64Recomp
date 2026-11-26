@@ -19,6 +19,15 @@ int main() {
         CHECK(lv[0].tmpl == 0 && lv[0].folder == "dune_sea" && lv[0].voice == kVoiceNone);
         CHECK(lv[1].tmpl == 3 && lv[1].voice == 640 && lv[1].description.empty());
     }
+    // mistyped_fields_report_not_throw: a numeric string is read as its number, any other wrong type is one error and the level still loads
+    {
+        std::vector<std::string> errors;
+        const auto lv = parseModLevels("m", R"({ "levels": [
+            { "id": "a", "title": 5, "template": "3", "folder": "a", "crawl": { "planet": "x" } },
+            { "id": "b", "title": "B", "template": 1, "folder": "b" } ] })", errors);
+        CHECK(lv.size() == 2 && lv[0].tmpl == 3 && lv[0].title.empty() && lv[1].id == "b");
+        CHECK(errors.size() == 2);
+    }
     // rejects_bad_templates_and_folders: only playable stock levels; folders are one plain name
     {
         std::vector<std::string> errors;

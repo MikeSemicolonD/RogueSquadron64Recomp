@@ -10,6 +10,7 @@ float rs64_ls_frame_dt(uint8_t*, float);
 void rs64_ls_frame_pads(uint8_t*, recomp_context*);
 void rs64_ls_frame_hash(uint8_t*, recomp_context*);
 uint32_t rs64_ls_song_active(uint8_t*, uint32_t);
+uint32_t rs64_ls_speech_idle(uint8_t*, uint32_t);
 void rs64_pause_state_point();
 void rs64_nav_hangar_frame();
 }
@@ -64,6 +65,15 @@ int song_active(uint32_t, uint8_t* rdram, void* c, void*)
 
     return RS64_HOOK_CONTINUE;
 }
+
+int speech_idle(uint32_t, uint8_t* rdram, void* c, void*)
+{
+
+    recomp_context* ctx = (recomp_context*)c;
+    ctx->r2 = (gpr)(int32_t)rs64_ls_speech_idle(rdram, (uint32_t)ctx->r2);
+
+    return RS64_HOOK_CONTINUE;
+}
 }
 
 extern "C" void rs64_register_builtin_hooks()
@@ -79,6 +89,8 @@ extern "C" void rs64_register_builtin_hooks()
     add_hook(RS64_HOOK_MENU_FRAME, pause_state, nullptr);
     add_hook(RS64_HOOK_MISSION_FRAME_PADS, pause_state, nullptr);
     add_hook(RS64_HOOK_SONG_ACTIVE, song_active, nullptr);
+    add_hook(RS64_HOOK_SPEECH_RESPONSE_1, speech_idle, nullptr);
+    add_hook(RS64_HOOK_SPEECH_RESPONSE_2, speech_idle, nullptr);
     add_hook(RS64_HOOK_CRAFT_SELECT_TICK, hangar_frame, nullptr);
     add_hook(RS64_HOOK_ATST_TICK, atst_flag, nullptr);
     add_hook(RS64_HOOK_MISSION_INIT, atst_flag, nullptr);

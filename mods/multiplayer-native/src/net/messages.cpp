@@ -68,7 +68,7 @@ uint8_t message_type(const uint8_t* data, size_t n)
         return data[1];
     }
 
-    if (data[0] != kProtocol || data[1] < 1 || data[1] > (uint8_t)Msg::Mod)
+    if (data[0] != kProtocol || data[1] < 1 || data[1] > (uint8_t)Msg::Ship)
     {
         return 0;
     }
@@ -143,6 +143,50 @@ bool decode_hello(const uint8_t* data, size_t n, Hello* out)
     }
 
     *out = h;
+    return true;
+}
+
+std::vector<uint8_t> encode_ship(const std::string& id)
+{
+
+    Writer w;
+    const size_t n = std::min<size_t>(id.size(), 15);
+
+    w.u8(kProtocol);
+    w.u8((uint8_t)Msg::Ship);
+    w.u8((uint8_t)n);
+
+    for (size_t i = 0; i < n; ++i) w.u8((uint8_t)id[i]);
+
+    return w.b;
+}
+
+bool decode_ship(const uint8_t* data, size_t n, std::string* id)
+{
+
+    Reader r{data, n};
+
+    if (!header(r, Msg::Ship))
+    {
+        return false;
+    }
+
+    const uint8_t len = r.u8();
+    std::string s;
+
+    if (len > 15)
+    {
+        return false;
+    }
+
+    for (uint8_t i = 0; i < len; ++i) s += (char)r.u8();
+
+    if (!r.done())
+    {
+        return false;
+    }
+
+    *id = s;
     return true;
 }
 

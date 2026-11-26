@@ -1,0 +1,86 @@
+/* Colours and type from the RS64 Explorer (tools/web/rs64-explorer/style.css): dark by default, light follows the OS unless the theme button picked one. */
+:root {
+  color-scheme: dark;
+  --bg: #0f1115; --panel: #171a21; --line: #2a2f3a; --text: #d9dde6; --dim: #8a92a3; --accent: #e8b84a; --sel: #2b3242;
+  --control: #222733; --control-hover: #2a303d; --control-hover-line: #4a5366; --track: #3a4150; --row-hover: #20252f;
+  --ok: #6cc28a; --bad: #ff9a9a; --bad-line: #ff5f5f; --strong: #fff;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --bg: #f3f4f7; --panel: #ffffff; --line: #d3d7df; --text: #1b1f27; --dim: #5c6474; --accent: #9a6a10; --sel: #e2e7f1;
+    --control: #eceef3; --control-hover: #e2e5ec; --control-hover-line: #9aa3b5; --track: #c9ced8; --row-hover: #e8ebf1;
+    --ok: #217a45; --bad: #b42b26; --bad-line: #d93636; --strong: #0f1115;
+  }
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f3f4f7; --panel: #ffffff; --line: #d3d7df; --text: #1b1f27; --dim: #5c6474; --accent: #9a6a10; --sel: #e2e7f1;
+  --control: #eceef3; --control-hover: #e2e5ec; --control-hover-line: #9aa3b5; --track: #c9ced8; --row-hover: #e8ebf1;
+  --ok: #217a45; --bad: #b42b26; --bad-line: #d93636; --strong: #0f1115;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 13px/1.4 system-ui, sans-serif; }
+header { position: sticky; top: 0; z-index: 2; display: flex; align-items: baseline; gap: 16px; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
+h1 { margin: 0; font-size: 16px; color: var(--accent); }
+#summary { font-weight: 600; }
+#made { margin-left: auto; color: var(--dim); }
+header select, #toolbar select { padding: 4px 6px; background: var(--control); color: var(--text); border: 1px solid var(--line); border-radius: 4px; font: inherit; }
+#themeBtn { width: 30px; height: 26px; padding: 0; background: var(--control); color: var(--text); border: 1px solid var(--line); border-radius: 4px; font-size: 15px; cursor: pointer; }
+#themeBtn:hover, header select:hover { background: var(--control-hover); border-color: var(--control-hover-line); }
+#sections { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; padding: 12px 16px 0; }
+.sec { display: grid; gap: 4px; padding: 8px 10px; text-align: left; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; font: inherit; }
+.sec:hover { border-color: var(--control-hover-line); background: var(--row-hover); }
+.sec.on { border-color: var(--accent); background: var(--sel); }
+.sec b { text-transform: capitalize; }
+.sec small { color: var(--dim); }
+.bar { height: 4px; border-radius: 2px; background: var(--ok); overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--bad-line); }
+#perf { margin: 12px 16px 16px; padding: 8px 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+#perf h2 { display: inline; margin: 0 10px 0 0; font-size: 14px; }
+#perf small { color: var(--dim); }
+#perf table { width: 100%; margin-top: 6px; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+#perf th { padding: 4px 8px; text-align: right; color: var(--dim); font-weight: 600; border-bottom: 1px solid var(--line); cursor: pointer; -webkit-user-select: none; user-select: none; }
+#perf th:hover { color: var(--text); }
+#perf td { padding: 3px 8px; text-align: right; border-bottom: 1px solid var(--line); }
+#perf th:first-child, #perf td:first-child { text-align: left; }
+#perf tbody tr:hover { background: var(--row-hover); }
+#toolbar { display: flex; align-items: center; gap: 12px; padding: 12px 16px; }
+#toolbar label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+#shown { color: var(--dim); }
+#rows { display: grid; gap: 10px; padding: 0 16px 16px; }
+.row { padding: 8px 10px; background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--ok); border-radius: 6px; }
+.row.fail { border-left-color: var(--bad-line); }
+.rowHead { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.rowHead b { color: var(--strong); overflow-wrap: anywhere; }
+.status { font-weight: 600; color: var(--ok); }
+.fail .status { color: var(--bad); }
+.pct, .fps { color: var(--dim); }
+.problems { margin-top: 2px; color: var(--bad); }
+.shots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
+.shots figure { margin: 0; }
+.shots figcaption { color: var(--dim); font-size: 11px; }
+.shots img { display: block; width: 100%; border: 1px solid var(--line); border-radius: 3px; background: var(--bg); cursor: zoom-in; }
+.shots img:hover { border-color: var(--accent); }
+#viewer { position: fixed; inset: 0; z-index: 10; display: flex; padding: 24px; background: rgb(0 0 0 / 70%); }
+#vBox { display: flex; flex-direction: column; flex: 1; min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+#vBar { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+#vTitle { color: var(--strong); overflow-wrap: anywhere; }
+#vModes { display: flex; gap: 4px; }
+.vTools { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+#vScale { min-width: 48px; text-align: center; color: var(--dim); font-variant-numeric: tabular-nums; }
+#vBar button { min-width: 30px; height: 26px; padding: 0 8px; background: var(--control); color: var(--text); border: 1px solid var(--line); border-radius: 4px; font: inherit; cursor: pointer; }
+#vBar button:hover { background: var(--control-hover); border-color: var(--control-hover-line); }
+#vBar button.on { border-color: var(--accent); color: var(--accent); }
+#vClose { margin-left: 8px; }
+#vStage { position: relative; flex: 1; overflow: hidden; background: var(--bg); cursor: grab; touch-action: none; }
+#vStage:active { cursor: grabbing; }
+#vLayer { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
+#vLayer img { display: block; max-width: none; -webkit-user-drag: none; user-select: none; }
+#vLayer.pixels img { image-rendering: pixelated; }
+#vB { position: absolute; top: 0; left: 0; }
+#vLine { position: absolute; top: 0; bottom: 0; width: 0; border-left: 2px solid var(--accent); pointer-events: none; }
+#vSplitBar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-top: 1px solid var(--line); color: var(--dim); }
+#vSplit { flex: 1; accent-color: var(--accent); }
+#empty { padding: 16px; color: var(--dim); }

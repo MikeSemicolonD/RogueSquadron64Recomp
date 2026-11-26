@@ -16,9 +16,11 @@ public:
     ~BrowserListener() { stop(); }
     // Makes a certificate and starts listening; false with *error set on failure.
     bool start(uint16_t port, int64_t now_ms, std::string* error);
+
     // Renews the certificate once it is 12 days old and no browser is connected (a session in progress keeps the old one up to 13); true when it did.
     bool tick(int64_t now_ms, std::string* error);
     void stop();
+
     // The part after '#' in the address browser players paste.
     const std::string& hash() const { return hash_; }
 

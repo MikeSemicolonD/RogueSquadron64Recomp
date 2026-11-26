@@ -27,6 +27,7 @@
 #include "util/debug_logs.h"
 #include "main/cli.h"
 #include "game/game_state.h"
+#include "game/hook_helpers.h"
 #include "game/nav_sequencer.h"
 #include "game/mod_content/camera_shots.h"
 #include "game/mod_content/mod_levels.h"
@@ -40,6 +41,7 @@
 #include "util/rdram_words.h"
 #include "util/host_ram_map.h"
 #include "util/settings_file.h"
+#include "hle/rt64_rs64_host.h"
 
 using recomp::dbg::env_str;
 using recomp::dbg::env_on;
@@ -49,6 +51,7 @@ using namespace rs64::mips;
 // ---- Mid-mission camera shots: mods link a level trigger to an in-level camera item in camera_shots.txt ----
 namespace {
 std::vector<rs64shots::Link> s_shot_links;
+std::vector<rs64shots::Swap> s_shot_swaps;
 rs64shots::Queue s_shot_queue;
 uint32_t s_shot_frame = 0;
 
@@ -62,6 +65,7 @@ void* s_shot_listener_user = nullptr;
 
 // Host RAM for the camera name the game's shot starter reads (above the manifest copies).
 constexpr uint32_t kShotName = RS64_HR_SHOT_NAME;
+constexpr uint32_t kShotSwap = RS64_HR_SHOT_SWAP;
 }
 
 extern "C" const char* rs64_mod_levels_current_folder();
@@ -79,12 +83,16 @@ extern "C" void rs64_camera_shots_init() {
         const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
         const size_t before = s_shot_links.size();
 
+        const size_t swaps_before = s_shot_swaps.size();
+
+        rs64shots::addSwaps(s_shot_swaps, text);
+
         for (const auto& old : rs64shots::addLinks(s_shot_links, text))
         {
             fprintf(stderr, "[shots] %s: overrides the earlier link %s %s -> %s\n", d.mod_id.c_str(), old.level.c_str(), old.trigger.c_str(), old.camera.c_str());
         }
 
-        fprintf(stderr, "[shots] %s: camera_shots.txt read (%zu links in all, %zu new)\n", d.mod_id.c_str(), s_shot_links.size(), s_shot_links.size() - before);
+        fprintf(stderr, "[shots] %s: camera_shots.txt read (%zu links in all, %zu new, %zu cutscene replacements)\n", d.mod_id.c_str(), s_shot_links.size(), s_shot_links.size() - before, s_shot_swaps.size() - swaps_before);
     }
 }
 
@@ -93,7 +101,7 @@ extern "C" void rs64_camera_shots_mission_start(uint8_t* rdram)
 
     s_remote_shots.clear();
 
-    if (s_shot_links.empty()) return;
+    if (s_shot_links.empty() && s_shot_swaps.empty()) return;
 
     static const char* digits = "0123456789abcdefghijklmnopqrstuvwxyz";
     const uint32_t level = rw(rdram, 0x80130B70u);
@@ -248,6 +256,42 @@ extern "C" void rs64_camera_shots_frame(uint8_t* rdram, recomp_context* ctx)
     if (local && rs64shots::tellsPeer(*shot) && s_shot_listener) s_shot_listener(name.c_str(), shot->trigger.c_str(), s_shot_listener_user);
 }
 
+// The mission script's own cut (setHudFlagBit40AndStoreArg 0x800C7884, camera name at a0): a mod's replace line plays another camera,
+// or none (1: skip the call). The host's own cuts pass names in host RAM and stay as they are.
+extern "C" int rs64_camera_shots_script_cut(uint8_t* rdram, recomp_context* ctx)
+{
+
+    const uint32_t name = (uint32_t)ctx->r4;
+
+    if (s_shot_swaps.empty() || name < 0x80000000u || name >= RS64_HR_START) return 0;
+
+    const std::string from = rstr(rdram, name, 255);
+    const auto to = rs64shots::swapFor(s_shot_swaps, s_shot_queue.level(), from);
+
+    if (!to) return 0;
+
+    if (to->empty())
+    {
+        fprintf(stderr, "[shots] %s: the mission's %s replaced by nothing\n", s_shot_queue.level().c_str(), from.c_str());
+        return 1;
+    }
+
+    const uint32_t item = level_object(rdram, ctx, *to);
+
+    if (!item || !rs64shots::isCameraItem(rw(rdram, item)))
+    {
+        fprintf(stderr, "[shots] %s: no camera %s to replace %s; the mission's plays\n", s_shot_queue.level().c_str(), to->c_str(), from.c_str());
+        return 0;
+    }
+
+    wstr(rdram, kShotSwap, to->substr(0, 255));
+    ctx->r4 = (int32_t)kShotSwap;
+
+    fprintf(stderr, "[shots] %s: playing %s in place of the mission's %s\n", s_shot_queue.level().c_str(), to->c_str(), from.c_str());
+
+    return 0;
+}
+
 // ---- Mod levels: levels.json entries shown in SELECT LEVEL after the stock ones, played as their template level ----
 namespace {
 std::vector<rs64levels::ModLevel> s_mod_levels;
@@ -259,6 +303,15 @@ int s_current_mod_level = -1;
 
 // Manifest paths the enabled mods ship under assets/ (files, .from and .bps), so a lookup is redirected only to a file that exists.
 std::set<std::string> s_mod_level_files;
+
+}
+
+// Every enabled mod's asset names (the files under assets/, .from / .bps stripped).
+const std::set<std::string>& rs64_mod_files() {
+    return s_mod_level_files;
+}
+
+namespace {
 
 // Host RAM for a redirected asset name (after the mid-mission shot name).
 constexpr uint32_t kLookupName = RS64_HR_LOOKUP_NAME;
@@ -505,6 +558,14 @@ static int32_t s_brief_index = -1;
 static uint32_t s_brief_rom = 0;
 static bool s_brief_now = false;
 
+// The next start of sound id `carrier` plays the MORT stream at cart offset `rom` instead (also a new ship's craft line).
+extern "C" void rs64_mod_levels_stream_for(uint8_t* rdram, uint32_t carrier, uint32_t rom)
+{
+
+    s_brief_index = (int16_t)MEM_H(0, (gpr)(int32_t)(0x8009FFE0u + carrier * 2u));
+    s_brief_rom = rom;
+}
+
 // SELECT LEVEL briefing voice (v0): a mod entry's recording or chosen stock line, or 0xFFFF (an empty line list) for none.
 extern "C" void rs64_mod_levels_voice(uint8_t* rdram, recomp_context* ctx)
 {
@@ -521,8 +582,7 @@ extern "C" void rs64_mod_levels_voice(uint8_t* rdram, recomp_context* ctx)
 
     const uint32_t carrier = 0x279u + (uint32_t)menu_level(*l);
     ctx->r2 = carrier;
-    s_brief_index = (int16_t)MEM_H(0, (gpr)(int32_t)(0x8009FFE0u + carrier * 2u));
-    s_brief_rom = brief->rom_off;
+    rs64_mod_levels_stream_for(rdram, carrier, brief->rom_off);
 }
 
 // allocAndConfigureNewVoice 0x8009B114 (s3 = speech index, s2 = rate or 0 for the table's): the recording is 8 kHz.
@@ -544,6 +604,8 @@ extern "C" void rs64_mod_levels_brief_stream(uint8_t* rdram, recomp_context* ctx
     s_brief_index = -1;
     const uint32_t base = (uint32_t)MEM_W(0, (gpr)(int32_t)0x80154684u);
     ctx->r5 = (gpr)(int32_t)(s_brief_rom - (base & 0x0FFFFFFFu));
+
+    fprintf(stderr, "[voice] own recording plays from cart 0x%X\n", s_brief_rom);
 }
 
 // The SELECT LEVEL entry of the mod level a boot target names (ROGUESQ_MOD_LEVEL), while SELECT LEVEL is open; -1 otherwise. The nav
@@ -971,13 +1033,12 @@ static int mod_level_voice_carrier(uint8_t* rdram)
     return rs64levels::kVoiceNone;
 }
 
-// The voice id to play for the mod level: its recording (level/<folder>/<recording>) when it ships one, else the stock voice; a
+// The voice id to play: the level's recording (level/<folder>/<recording>) when a mod ships one, else the stock voice; a
 // recording streams through the carrier line, redirected like the briefing's.
-static int mod_level_voice(uint8_t* rdram, int voice, const std::string& recording)
+static int level_voice(uint8_t* rdram, const std::string& folder, int voice, const std::string& recording)
 {
 
-    const auto& l = s_mod_levels[s_current_mod_level];
-    const auto* rec = recording.empty() ? nullptr : rs64::assets::find("level/" + l.folder + "/" + recording);
+    const auto* rec = recording.empty() ? nullptr : rs64::assets::find("level/" + folder + "/" + recording);
 
     if (!rec) return voice;
 
@@ -1003,7 +1064,7 @@ static void objective_callout(uint8_t* rdram, recomp_context* ctx, uint32_t i)
 {
 
     const auto& o = s_mod_levels[s_current_mod_level].objectives[i];
-    const int voice = mod_level_voice(rdram, o.voice, o.recording);
+    const int voice = level_voice(rdram, s_mod_levels[s_current_mod_level].folder, o.voice, o.recording);
     constexpr uint32_t kHalfSecond = 0x3F000000u;
 
     if (voice >= 0) rs64::mips::mips_call(rdram, ctx, 0x800C7D1Cu, { (uint32_t)voice, kHalfSecond });
@@ -1058,7 +1119,7 @@ extern "C" void rs64_mod_levels_pause_voice(uint8_t* rdram, recomp_context* ctx)
     if (i >= objs->size()) return;
 
     const auto& o = (*objs)[i];
-    const int voice = mod_level_voice(rdram, o.pauseVoice, o.pauseRecording);
+    const int voice = level_voice(rdram, s_mod_levels[s_current_mod_level].folder, o.pauseVoice, o.pauseRecording);
 
     if (voice >= 0) ctx->r4 = (gpr)(int32_t)(voice - 0x2C0);
 }
@@ -1066,6 +1127,8 @@ extern "C" void rs64_mod_levels_pause_voice(uint8_t* rdram, recomp_context* ctx)
 // ---- Level rules: assets/level/<folder>/rules.txt (or rules.json) from enabled mods, run against the level being played ----
 namespace {
 std::map<std::string, std::vector<rs64rules::Rule>> s_rules_by_folder;
+// A ship's rules sit in s_rules_by_folder under this prefix and its id.
+constexpr const char* kShipRulesPrefix = "ship:";
 std::map<std::string, std::vector<std::string>> s_packages_by_folder;
 rs64rules::Runner s_rules;
 std::string s_rules_folder;
@@ -1137,7 +1200,7 @@ bool rule_do(uint8_t* rdram, recomp_context* ctx, const rs64rules::Action& a, co
     }
     else if (k == "voice" || k == "recording")
     {
-        const int voice = s_current_mod_level >= 0 ? mod_level_voice(rdram, rule_int(a, "id", -1), rule_str(a, "file")) : rule_int(a, "id", -1);
+        const int voice = level_voice(rdram, s_rules_folder, rule_int(a, "id", -1), rule_str(a, "file"));
 
         if (voice >= 0) rs64::mips::mips_call(rdram, ctx, 0x800C7D1Cu, { (uint32_t)voice, 0u });
     }
@@ -1374,6 +1437,28 @@ extern "C" int rs64_level_has_clouds(void)
     return s_env_clouds ? 1 : 0;
 }
 
+// loadPlayerStartPosition, after it set the flight area from the map edges and the start record's one inset: a level's own inset per side.
+extern "C" void rs64_env_flight_bounds(uint8_t* rdram)
+{
+
+    if (!s_env || !s_env->hasBounds)
+    {
+        return;
+    }
+
+    constexpr uint32_t kGrid = 0x80136DC0u;
+    constexpr uint32_t kBounds = 0x8010B790u;
+    const float minX = rs64::mips::rf(rdram, kGrid + 0x20) + s_env->bounds[0];
+    const float maxX = rs64::mips::rf(rdram, kGrid + 0x24) - s_env->bounds[1];
+    const float minZ = rs64::mips::rf(rdram, kGrid + 0x2C) + s_env->bounds[2];
+    const float maxZ = rs64::mips::rf(rdram, kGrid + 0x30) - s_env->bounds[3];
+
+    rs64::mips::wf(rdram, kBounds, minX);
+    rs64::mips::wf(rdram, kBounds + 0x4, maxX);
+    rs64::mips::wf(rdram, kBounds + 0x8, minZ);
+    rs64::mips::wf(rdram, kBounds + 0xC, maxZ);
+}
+
 // setFog entry: a0-a2 are the fog colour.
 extern "C" void rs64_env_fog_color(recomp_context* ctx)
 {
@@ -1518,6 +1603,32 @@ extern "C" void rs64_rules_init()
             auto& list = s_rules_by_folder[folder];
             list.insert(list.end(), rules.begin(), rules.end());
         }
+
+        // A new ship's rules, assets/pl_crafts/<ship>_rules.txt: run with the level's while that ship flies.
+        const auto crafts = recomp::mods::get_mod_filename(d.mod_id) / "assets" / "pl_crafts";
+
+        ec.clear();
+
+        for (auto it = std::filesystem::directory_iterator(crafts, ec); !ec && it != std::filesystem::directory_iterator(); it.increment(ec))
+        {
+            const std::string name = it->path().filename().string();
+            constexpr const char* kShipRules = "_rules.txt";
+
+            if (name.size() <= std::strlen(kShipRules) || name.compare(name.size() - std::strlen(kShipRules), std::string::npos, kShipRules) != 0) continue;
+
+            std::ifstream in(it->path(), std::ios::binary);
+            const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+            const std::string ship = name.substr(0, name.size() - std::strlen(kShipRules));
+            std::vector<std::string> errors;
+            auto rules = rs64rules::parseScript(text, errors);
+
+            for (const auto& e : errors) fprintf(stderr, "[rules] %s ship %s: %s\n", d.mod_id.c_str(), ship.c_str(), e.c_str());
+
+            fprintf(stderr, "[rules] %s: %zu rules for ship %s\n", d.mod_id.c_str(), rules.size(), ship.c_str());
+
+            auto& list = s_rules_by_folder[kShipRulesPrefix + ship];
+            list.insert(list.end(), rules.begin(), rules.end());
+        }
     }
 }
 
@@ -1561,7 +1672,9 @@ extern "C" void rs64_rules_mission_start(uint8_t* rdram)
     set_crawl_playing(0);
     s_playing_crawl = nullptr;
     s_rules_folder = rs64rules::rulesFolder(mod ? mod : "", (int)rw(rdram, 0x80130B70u));
-    s_rules_pending = s_rules_by_folder.count(s_rules_folder) != 0;
+    const std::string ship = rs64_ships_flying_id();
+
+    s_rules_pending = s_rules_by_folder.count(s_rules_folder) != 0 || (!ship.empty() && s_rules_by_folder.count(kShipRulesPrefix + ship) != 0);
     s_rules_elapsed = 0;
     s_rules.reset({}, [](const std::string&) { return true; });
     s_mission_running = true;
@@ -1585,7 +1698,14 @@ extern "C" void rs64_rules_frame(uint8_t* rdram, recomp_context* ctx)
         const auto known = [&](const std::string& n) { return level_object(rdram, ctx, n) != 0; };
         const auto known_mod = [](const std::string& n) { return rs64::host::has_rule_condition(n.c_str()); };
 
-        for (const auto& e : s_rules.reset(s_rules_by_folder[s_rules_folder], known, own_objectives() != nullptr, known_mod)) {
+        // The flying ship's own rules join the level's.
+        auto rules = s_rules_by_folder[s_rules_folder];
+        const std::string ship = rs64_ships_flying_id();
+        const auto shipRules = ship.empty() ? s_rules_by_folder.end() : s_rules_by_folder.find(kShipRulesPrefix + ship);
+
+        if (shipRules != s_rules_by_folder.end()) rules.insert(rules.end(), shipRules->second.begin(), shipRules->second.end());
+
+        for (const auto& e : s_rules.reset(rules, known, own_objectives() != nullptr, known_mod)) {
             fprintf(stderr, "[rules] %s: %s; skipped\n", s_rules_folder.c_str(), e.c_str());
         }
     }

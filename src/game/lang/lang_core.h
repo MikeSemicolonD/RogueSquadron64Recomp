@@ -94,7 +94,12 @@ inline std::optional<Language> parse_language(const std::string& manifest, const
     Language lang;
     lang.code = m["code"].get<std::string>();
     lang.name = m["name"].get<std::string>();
-    lang.rtl = m.value("rtl", false);
+    lang.rtl = m.contains("rtl") && m["rtl"].is_boolean() && m["rtl"].get<bool>();
+
+    if (m.contains("rtl") && !m["rtl"].is_boolean())
+    {
+        errors.push_back(lang.code + ": \"rtl\" must be true or false; ignored");
+    }
 
     if (lang.code.empty() || builtin_slot(lang.code) >= 0)
     {

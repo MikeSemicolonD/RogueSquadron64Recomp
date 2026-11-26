@@ -23,13 +23,12 @@ function classifyState() {
     if (inKseg0(mem.u32[0x800CE730])) {            // gCurrentMenuData
         var id = mem.u8[0x800CE734];               // menu id
         if (id == 1) { var sub = mem.u8[0x800CE626];
-            if (sub == 0) return "menu.account.enter_name";
-            if (sub == 1) return "menu.account.level_select";
-            if (sub == 2) return "menu.account.craft_select";
-            return "menu.account"; }
+            if (sub == 0) return "menu.select_game";
+            if (sub == 1 || sub == 2) return "menu.level_select";
+            return "menu"; }
         var nm = { 0: "menu.main", 2: "menu.options", 3: "menu.game_settings", 4: "menu.elite_rogues",
                    5: "menu.controller_settings", 6: "menu.sound_settings", 7: "menu.passcodes",
-                   8: "menu.biographies", 10: "menu.media", 11: "menu.media.showroom" };
+                   8: "menu.biographies", 10: "menu.showroom" };
         return nm[id] || "menu";
     }
     return "unknown";

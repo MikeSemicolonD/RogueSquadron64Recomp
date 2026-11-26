@@ -1,4 +1,5 @@
-#include "../src/game/nav_sequencer.h"
+// Built into this file so the checks below can reach its per-run state.
+#include "../src/game/nav_sequencer.cpp"
 #include "check.h"
 #include <cstdio>
 #include <cstdint>
@@ -11,7 +12,12 @@ extern "C" void rs64_lang_original(const char* shown, char* out, size_t cap) { s
 extern "C" int rs64_mod_levels_boot_entry() { return -1; }
 extern "C" int rs64_mod_levels_boot_named() { return 0; }
 extern "C" uint32_t rs64_vi_rate() { return 60; }
+extern "C" { volatile int g_current_scene = -1; }
 extern "C" void rs64_pause_point(const char*, uint32_t) {}
+extern "C" int rs64_ships_bay_craft(uint8_t* rdram, int bay) { return rdram[(0xCC3F8u + (uint32_t)bay) ^ 3]; }
+
+static int s_turns_to = -1;
+extern "C" int rs64_ships_turns_to(uint8_t*, int) { return s_turns_to; }
 
 int main() {
     RsNavTarget t;
@@ -42,6 +48,41 @@ int main() {
     t = rs64_nav_parse("lobby:host,2");  CHECK(t.c == -1);
     t = rs64_nav_parse("menu");      CHECK(t.kind == NAV_NONE);
     t = rs64_nav_parse(nullptr);      CHECK(t.kind == NAV_NONE);
+
+    // A craft never shown gives up after 16 bay turns; a restart (the abort loop or chain) turns the bays again.
+    std::vector<uint8_t> rdram(0x200000, 0);
+    int calls = 0;
+
+    // The hangar reads input (state 3), so the way to turn is chosen.
+    rdram[0xCC3E4u ^ 3] = 3;
+
+    while (!nav_step_craft(rdram.data(), 5, "test") && calls < 20000) {
+        ++calls;
+    }
+
+    CHECK(s_run.bay_presses == 16);
+    CHECK(nav_step_craft(rdram.data(), 5, "test"));
+    nav_run_reset();
+    CHECK(!nav_step_craft(rdram.data(), 5, "test"));
+    CHECK(s_run.bay_presses == 1);
+
+    // A craft no turn reaches (a locked Falcon) is done at once, without a press.
+    nav_run_reset();
+    s_turns_to = 0;
+    CHECK(nav_step_craft(rdram.data(), 5, "test"));
+    CHECK(s_run.bay_presses == 0);
+    s_turns_to = -1;
+    nav_run_reset();
+
+    // A queued menu path starts with no press pending and the settle wait from zero.
+    s_run.pressed_at = 40;
+    s_run.stable = 100;
+    s_run.seen_title = 0x800C0000u;
+    rs64_nav_menu_next("OPTIONS");
+    take_menu_next();
+    CHECK(s_run.pressed_at == -1 && s_run.stable == 0 && s_run.seen_title == 0);
+    CHECK(g_target.kind == NAV_MENU && s_step == 0);
+
     printf("nav_target_test OK\n");
     return 0;
 }

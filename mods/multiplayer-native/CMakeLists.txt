@@ -10,6 +10,7 @@ set(MP_BASE_FILES
     ${CMAKE_SOURCE_DIR}/src/lockstep/lockstep_core.cpp
     ${CMAKE_SOURCE_DIR}/src/lockstep/lockstep_core.h
     ${CMAKE_SOURCE_DIR}/src/util/debug_logs.h
+    ${CMAKE_SOURCE_DIR}/src/util/settings_file.h
     ${CMAKE_SOURCE_DIR}/include/os_compat.h
     ${CMAKE_SOURCE_DIR}/src/util/rdram_words.h)
 # The relay server's protocol (relay-server/src), shared with rs64_relay.

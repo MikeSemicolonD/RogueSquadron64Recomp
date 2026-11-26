@@ -24,6 +24,7 @@ namespace rs64::app {
         SDL_JoystickID id = -1;
         std::string    guid;
         int            ordinal = 0;
+
         // Force-feedback sticks without SDL_JoystickRumble.
         SDL_Haptic*    haptic = nullptr;
     };
@@ -43,6 +44,9 @@ namespace rs64::app {
     extern std::vector<OpenJoy> g_open_joys;
     extern std::vector<SDL_Joystick*> g_joy_by_dev;
     extern std::atomic<float> g_throttle;
+    // Trigger resistance the last craft speed update asked for (bit 0 thrust, bit 1 brake) and when, in steady_clock ms.
+    extern std::atomic<uint32_t> g_trigger_feel;
+    extern std::atomic<int64_t> g_trigger_feel_ms;
     extern std::atomic<bool> g_report_rumble_pak;
     extern bool g_fullscreen_applied;
     extern rs64::touch::Engine g_touch;
@@ -51,11 +55,19 @@ namespace rs64::app {
     // Set when a pad connects so the next lightbar tick (rumble.cpp) re-sends the current color.
     extern std::atomic<bool> g_lightbar_resend;
 
+    // Takes the loaded hotkeys; ROGUESQ_HOTKEYS (--hotkeys / --no-hotkeys) overrides their enabled flag for the run.
+    void set_hotkeys(const rs64::input::HotkeyConfig& c);
+    rs64::input::Hotkey hotkey_at(int scancode);
+    // The key name a shortcut is on, for notices.
+    std::string hotkey_key(rs64::input::Hotkey h);
+
     void poll_input();
     bool get_n64_input(int controller_num, uint16_t* buttons, float* x, float* y);
     void set_rumble(int controller_num, bool on);
     ultramodern::input::connected_device_info_t get_connected_device_info(int controller_num);
     void rumble_thread_main();
+    // Resets DualSense trigger resistance and the lightbar for good; called on quit and from the crash handlers.
+    void release_pad_effects();
     int joy_dev_locked(const OpenJoy& oj);
     void rebind_open_joysticks_locked();
 

@@ -360,6 +360,7 @@ set(RS64_MAIN_SOURCES
     ${CMAKE_SOURCE_DIR}/src/game/hook_helpers.cpp
     ${CMAKE_SOURCE_DIR}/src/game/mod_content/asset_overrides.cpp
     ${CMAKE_SOURCE_DIR}/src/game/mod_content/mod_level_hooks.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/mod_content/hangar_ships.cpp
     ${CMAKE_SOURCE_DIR}/src/game/static_standins.cpp
     ${CMAKE_SOURCE_DIR}/src/lockstep/lockstep_core.cpp
     ${CMAKE_SOURCE_DIR}/src/lockstep/lockstep.cpp
@@ -383,7 +384,7 @@ endif()
 if (ANDROID)
     add_library(RogueSquadron64Recomp SHARED ${RS64_MAIN_SOURCES} ${CMAKE_SOURCE_DIR}/src/main/android_host.cpp)
     set_target_properties(RogueSquadron64Recomp PROPERTIES OUTPUT_NAME main)
-    target_link_libraries(RogueSquadron64Recomp PRIVATE android log)
+    target_link_libraries(RogueSquadron64Recomp PRIVATE android log aaudio)
     target_link_options(RogueSquadron64Recomp PRIVATE -Wl,-z,max-page-size=16384)
 
     # Discord status on Android needs the closed Discord Social SDK, found through Prefab when android/app/libs/discord_partner_sdk.aar exists.
@@ -430,7 +431,7 @@ if (EMSCRIPTEN)
         VERBATIM)
 
     # Browser test: cmake --build build-web --target web_shader_convert_test, then open web_shader_convert_test.html from build-web.
-    set(RS64_WEB_TEST_SPIRV ${CMAKE_BINARY_DIR}/src/shaders/ComposePS.hlsl.spirv.c ${CMAKE_BINARY_DIR}/src/shaders/RSPSmoothNormalCS.hlsl.spirv.c)
+    set(RS64_WEB_TEST_SPIRV ${CMAKE_BINARY_DIR}/src/shaders/ComposePS.hlsl.spirv.c ${CMAKE_BINARY_DIR}/src/shaders/RSPSmoothNormalCS.hlsl.spirv.c ${CMAKE_BINARY_DIR}/src/shaders/RS64ShadowsPS.hlsl.spirv.c ${CMAKE_BINARY_DIR}/src/shaders/RS64ShadowsSoftPS.hlsl.spirv.c ${CMAKE_BINARY_DIR}/src/shaders/RS64LightsShadowedPS.hlsl.spirv.c ${CMAKE_BINARY_DIR}/src/shaders/RS64FogShaftsPS.hlsl.spirv.c ${CMAKE_BINARY_DIR}/src/shaders/RS64HazeShaftsPS.hlsl.spirv.c ${CMAKE_BINARY_DIR}/src/shaders/RS64HazeUpsamplePS.hlsl.spirv.c)
     set_source_files_properties(${RS64_WEB_TEST_SPIRV} PROPERTIES GENERATED TRUE)
     add_executable(web_shader_convert_test EXCLUDE_FROM_ALL ${CMAKE_SOURCE_DIR}/tests/wasm/web_shader_convert_test.cpp ${CMAKE_SOURCE_DIR}/src/video/web_shader_convert.cpp ${RS64_WEB_TEST_SPIRV})
     target_include_directories(web_shader_convert_test PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/tools/wgsl)
@@ -441,13 +442,13 @@ if (EMSCRIPTEN)
         VERBATIM)
 
     # Browser test, run like web_shader_convert_test: plume's WebGPU backend with RT64 shaders.
-    set(RS64_PLUME_TEST_SPIRV ${CMAKE_BINARY_DIR}/src/shaders/IdleCS.hlsl.spirv.c ${CMAKE_BINARY_DIR}/src/shaders/FullScreenVS.hlsl.spirv.c ${CMAKE_BINARY_DIR}/src/shaders/ComposePS.hlsl.spirv.c ${CMAKE_BINARY_DIR}/src/shaders/TextureCopyPS.hlsl.spirv.c)
+    set(RS64_PLUME_TEST_SPIRV ${CMAKE_BINARY_DIR}/src/shaders/IdleCS.hlsl.spirv.c ${CMAKE_BINARY_DIR}/src/shaders/FullScreenVS.hlsl.spirv.c ${CMAKE_BINARY_DIR}/src/shaders/ComposePS.hlsl.spirv.c ${CMAKE_BINARY_DIR}/src/shaders/TextureCopyPS.hlsl.spirv.c ${CMAKE_BINARY_DIR}/src/shaders/ReadSceneHeaderCS.hlsl.spirv.c ${CMAKE_BINARY_DIR}/src/shaders/RS64SoftRayQueryTestCS.hlsl.spirv.c)
     set_source_files_properties(${RS64_PLUME_TEST_SPIRV} PROPERTIES GENERATED TRUE)
     add_executable(plume_webgpu_test EXCLUDE_FROM_ALL ${CMAKE_SOURCE_DIR}/tests/wasm/plume_webgpu_test.cpp ${CMAKE_SOURCE_DIR}/src/video/web_shader_convert.cpp ${RS64_PLUME_TEST_SPIRV})
     target_include_directories(plume_webgpu_test PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/tools/wgsl)
     target_link_libraries(plume_webgpu_test PRIVATE plume)
     add_dependencies(plume_webgpu_test rt64)
-    target_link_options(plume_webgpu_test PRIVATE -sPROXY_TO_PTHREAD -sEXPORTED_FUNCTIONS=_main,_malloc,_free)
+    target_link_options(plume_webgpu_test PRIVATE -sPROXY_TO_PTHREAD -sINITIAL_MEMORY=256MB -sEXPORTED_FUNCTIONS=_main,_malloc,_free)
     add_custom_command(TARGET plume_webgpu_test POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/tests/wasm/plume_webgpu_test.html ${CMAKE_SOURCE_DIR}/tools/web/play/rs64tint.js ${CMAKE_SOURCE_DIR}/tools/web/play/rs64tint.wasm $<TARGET_FILE_DIR:plume_webgpu_test>
         VERBATIM)
@@ -553,7 +554,7 @@ add_executable(touch_input_test EXCLUDE_FROM_ALL
     ${CMAKE_SOURCE_DIR}/src/input/touch_config.cpp
 )
 set_target_properties(touch_input_test PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
-target_include_directories(touch_input_test PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/lib/rt64/src/contrib)
+target_include_directories(touch_input_test PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime/N64Recomp/include ${CMAKE_SOURCE_DIR}/lib/rt64/src/contrib)
 
 # Not part of the default build: cmake --build build --config Debug --target video_config_test
 add_executable(video_config_test EXCLUDE_FROM_ALL

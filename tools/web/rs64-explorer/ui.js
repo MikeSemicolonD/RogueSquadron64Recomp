@@ -16,6 +16,21 @@ const drop = $('drop');
 const dropBox = drop.querySelector('.box');
 dropBox.onclick = () => $('romfile').click();
 dropBox.onkeydown = (e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), $('romfile').click());
+
+idbKv('readonly', (s) => s.get('lastRom')).then((file) => {
+  if (!file)
+    return;
+
+  $('lastRom').hidden = false;
+  $('lastRom').title = file.name;
+
+  $('lastRom').onclick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openFile(file);
+  };
+}).catch(() => {});
+
 addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
 addEventListener('dragleave', () => drop.classList.remove('over'));
 
@@ -46,6 +61,7 @@ const setMode = (m) => {
     rememberLevel();
 
   mode = m;
+  store('rs64.tab', m);
 
   for (const [id, k] of [
     ['tabModels', 'models'],
@@ -77,10 +93,42 @@ const setMode = (m) => {
   syncBackButton();
   renderList();
 
-  // These tabs have no view of their own, so they open on their first item instead of an empty page.
-  if ((m === 'audio' && !overCut && !audioSel && !musicSel) || (m === 'fonts' && !fontSel) || (m === 'menus' && !menuSel))
+  // After a ROM load, the tab opens on the item last opened there (its place in the list), quietly on the Audio tab.
+  const back = restoreRow?.mode === m ? $('list').querySelectorAll('.row')[restoreRow.index] : null;
+
+  if (restoreRow?.mode === m)
+    restoreRow = null;
+
+  if (back)
+  {
+    audioQuiet = true;
+    back.click();
+
+    return;
+  }
+
+  // These tabs open on their first item instead of an empty page, or (Levels) the model or effect left on screen.
+  const audioFirst = m === 'audio' && !overCut && !audioSel && !musicSel;
+
+  if (audioFirst || (m === 'fonts' && !fontSel) || (m === 'menus' && !menuSel) || (m === 'levels' && !selectedLevel && !cut))
+  {
+    audioQuiet = audioFirst;
     $('list').querySelector('.row')?.click();
+  }
 };
+
+// The item to reopen on a tab after the next ROM load ({ mode, index }), and each tab's last opened item by its place in the
+// unfiltered list (a filtered list numbers its rows differently).
+let restoreRow = null;
+
+// Read before the row's own click, which rebuilds the list.
+$('list').addEventListener('click', (e) => {
+  const row = e.target.closest('.row');
+  const index = [...$('list').querySelectorAll('.row')].indexOf(row);
+
+  if (index >= 0 && !$('filter').value)
+    store('rs64.item.' + mode, index);
+}, true);
 
 $('tabFonts').onclick = () => setMode('fonts');
 
@@ -186,8 +234,7 @@ function rememberLevel(always = false)
     level: dir,
     cut: selected.startsWith('cut:') ? selected.slice(4) : null,
     view: getView(),
-    editMode,
-    item: sel && { type: sel.it.type, index: sel.it.index }
+    ...editorState()
   };
 
   const folder = dir.split('/').pop();
@@ -219,14 +266,43 @@ async function returnToLevel()
     return;
 
   setView(b.view);
+  restoreEditor(b);
+}
+
+// The level editor as it is: edit mode, selected object, which list shows and the open level event window.
+function editorState()
+{
+  return {
+    editMode,
+    item: sel && { type: sel.it.type, index: sel.it.index },
+    levelEvents: levelEventsOn,
+    events: !$('rulesPanel').hidden && rulesPanelFocus ? {
+      ...rulesPanelFocus,
+      it: rulesPanelFocus.it && { type: rulesPanelFocus.it.type, index: rulesPanelFocus.it.index }
+    } : null
+  };
+}
+
+// Puts editorState back on the level as loaded now; an object that is gone is skipped, and so is its window.
+function restoreEditor(b)
+{
+  const find = (r) => r && editObjects().find(([, x]) => x.type === r.type && x.index === r.index && !x.pathEvent);
 
   if (b.editMode && editMode !== b.editMode)
     setEditMode(b.editMode);
 
-  const again = b.item && editObjects().find(([, x]) => x.type === b.item.type && x.index === b.item.index && !x.pathEvent);
+  const again = find(b.item);
 
   if (again)
     select(again[0]);
+
+  levelEventsOn = !!b.levelEvents;
+  syncSelPanel();
+
+  const owner = find(b.events?.it);
+
+  if (b.events && (owner || !b.events.it))
+    openRulesPanel({ ...b.events, it: owner?.[1] ?? null });
 }
 
 $('btnBack').onclick = returnToLevel;
@@ -444,11 +520,19 @@ $('btnExport').onclick = async () => {
   try {
     const animations = animClips();
 
+    // Clips are poses relative to the model, so it is written at its rest pose (hinged wings at 0 degrees: X-wing S-foils closed,
+    // shuttle wings up), the pose an import bakes and the game's hardpoints and own wing turn assume.
+    if (animations.length && foils)
+      applyFoils(foils.kind === 'shuttle' ? 0 : 1);
+
     // glTF cannot animate a node stored as a matrix, so animated exports write each node's transform as TRS (rig nodes keep theirs in .matrix).
     if (animations.length)
       root.traverse((o) => !o.matrixAutoUpdate && o.matrix.decompose(o.position, o.quaternion, o.scale));
 
     const glb = await new GLTFExporter().parseAsync(root, { binary: true, onlyVisible: true, animations, trs: animations.length > 0 });
+
+    if (animations.length && foils)
+      applyFoils();
 
     saveBlob(new Blob([glb], { type: 'model/gltf-binary' }), selected.split('/').pop() + (selectedLevel ? '' : '_lod' + lodLevel()) + '.glb');
   } finally {
@@ -467,7 +551,15 @@ const dirty = new Set();
 const modDirty = () => [...dirty].filter((p) => !p.startsWith('explorer/'));
 const virtualAsset = (p) => p.startsWith('explorer/') || p.startsWith('mod/') || p.endsWith('_PAINT');
 const sameBytes = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
-let history = createHistory();
+let history = withContext(createHistory());
+
+// Where an edit is made (the tab, what is open there and, on a level, the editor's state), kept on its undo step.
+function withContext(h)
+{
+  h.context = () => ({ mode, selected, fontSel, menuSel, editor: selectedLevel && !String(selected).startsWith('cut:') ? editorState() : null });
+
+  return h;
+}
 
 function updateModButton()
 {
@@ -478,6 +570,8 @@ function updateModButton()
   $('btnModLabel').textContent = n ? `Export mod\n(${n} edited asset${n > 1 ? 's' : ''})` : 'Export mod';
   $('btnUndo').disabled = !history.at;
   $('btnRedo').disabled = history.at >= history.steps.length;
+  $('btnUndo').title = history.at ? `Undo ${history.steps[history.at - 1].label} (Ctrl+Z)` : 'Undo (Ctrl+Z)';
+  $('btnRedo').title = history.at < history.steps.length ? `Redo ${history.steps[history.at].label} (Ctrl+Y or Ctrl+Shift+Z)` : 'Redo (Ctrl+Y or Ctrl+Shift+Z)';
 }
 
 function markDirty(path, now) {
@@ -732,7 +826,8 @@ async function historyGroup(label, fn) {
 }
 
 // Undo / redo: write the stored bytes back, then rebuild whatever shows them (cutscene, level with its terrain, or model).
-async function applyHistory(changes) {
+async function applyHistory(changes, ctx)
+{
   if (!changes.length)
     return;
 
@@ -743,11 +838,14 @@ async function applyHistory(changes) {
 
   updateModButton();
 
-  if (changes.some((c) => c.path === MOD_LEVELS))
+  if (changes.some((c) => c.path === MOD_LEVELS || c.path === MOD_SHIPS))
     await applyModLevels();
 
   rulesChanged();
   crawlsChanged();
+
+  if (ctx)
+    return showContext(ctx);
 
   if (mode === 'fonts' && fontSel)
     showFont(fontSel);
@@ -756,6 +854,39 @@ async function applyHistory(changes) {
     showMenu(menuSel);
 
   await refreshView();
+}
+
+// The tab and item an edit was made on, rebuilt with the restored bytes, and on a level the editor as it was.
+async function showContext(ctx)
+{
+  if (ctx.mode !== mode)
+    setMode(ctx.mode);
+
+  if (ctx.mode === 'fonts' && ctx.fontSel)
+    return showFont(ctx.fontSel);
+
+  if (ctx.mode === 'menus' && ctx.menuSel)
+    return showMenu(ctx.menuSel);
+
+  if (!ctx.selected || selected === ctx.selected)
+    await refreshView();
+  else
+  {
+    modelCache.clear();
+    clearCaches();
+
+    if (ctx.selected.startsWith('cut:'))
+      await showCutscene(ctx.selected.slice(4));
+    else if (ctx.mode === 'levels')
+      await showLevel(ctx.selected, true);
+    else if (ctx.mode === 'effects')
+      await showEffect(ctx.selected);
+    else
+      await showModel(ctx.selected);
+  }
+
+  if (ctx.editor)
+    restoreEditor(ctx.editor);
 }
 
 async function refreshView()
@@ -869,7 +1000,9 @@ async function openProject()
   }
 
   // A mod level's files are aliases of its template's: they must exist before their originals are read.
-  applyModLevelsText(new TextDecoder().decode(loaded.current.get(MOD_LEVELS) ?? new Uint8Array(0)));
+  const textOf = (p) => new TextDecoder().decode(loaded.current.get(p) ?? new Uint8Array(0));
+
+  applyModLevelsText(textOf(MOD_LEVELS), textOf(MOD_SHIPS));
 
   const originals = new Map();
 
@@ -888,7 +1021,7 @@ async function openProject()
     markDirty(p, now);
   }
 
-  history = loaded.history;
+  history = withContext(loaded.history);
   savedStep = history.steps[history.at - 1] ?? null;
   projectHandle = handle;
   updateModButton();
@@ -902,11 +1035,32 @@ addEventListener('keydown', (e) => {
   }
 });
 
-const undoEdit = () => applyHistory(history.undo());
-const redoEdit = () => applyHistory(history.redo());
+// Each step goes back to where it was made: undo reads the step before it moves, redo the step it moves onto.
+const undoEdit = () => {
+  const ctx = history.steps[history.at - 1]?.ctx;
+
+  return applyHistory(history.undo(), ctx);
+};
+
+const redoEdit = () => {
+  const ctx = history.steps[history.at]?.ctx;
+
+  return applyHistory(history.redo(), ctx);
+};
+
+// A field being typed in keeps Ctrl+Z for its own text until its value is applied (change); after that, and on a select or a checkbox,
+// Ctrl+Z undoes the edit like anywhere else.
+let typingIn = null;
+
+addEventListener('input', (e) => {
+  if (e.target.matches?.('input:not([type=checkbox]):not([type=range]),textarea,[contenteditable]'))
+    typingIn = e.target;
+}, true);
+
+addEventListener('change', () => (typingIn = null), true);
 
 addEventListener('keydown', (e) => {
-  if (!(e.ctrlKey || e.metaKey) || e.target.closest?.('input,select,textarea'))
+  if (!(e.ctrlKey || e.metaKey) || (typingIn && e.target === typingIn))
     return;
 
   const k = e.key.toLowerCase();
@@ -988,10 +1142,10 @@ function askChoice(question, answers) {
 }
 
 // Import options for a craft: the nose direction, and the canopy and exhaust options the craft has parts for.
-function askCraftImport(file, hob, engines)
+function askCraftImport(file, hob, engines, object, trails = [])
 {
   const d = elem('dialog', { className: 'panel levelDialog' });
-  const names = hob.objects[0].lods[0].flat().map((p) => p.name ?? '');
+  const names = hob.objects[object].lods[0].flat().map((p) => p.name ?? '');
   const hasPart = (prefix) => names.some((n) => n.startsWith(prefix));
 
   const row = (text, ...inputs) => {
@@ -1025,7 +1179,10 @@ function askCraftImport(file, hob, engines)
     rows.push(row('Exhaust ', exhaust, colour));
 
   if (engines.length)
-    rows.push(elem('small', { textContent: `Flames move to the model's ${engines.length} eng_ markers` }));
+    rows.push(elem('small', { textContent: `Flames and engine glows move to the model's ${engines.length} eng_ markers` }));
+
+  if (trails.length && hob.objects[object].hardpoints.some((h) => h.name.startsWith('trl')))
+    rows.push(elem('small', { textContent: `Contrails move to the model's ${trails.length} trl_ markers` }));
 
   const go = elem('button', { textContent: 'Import' });
   const cancel = elem('button', { textContent: 'Cancel' });
@@ -1064,9 +1221,18 @@ async function importCraftModel()
 {
   const id = selected;
 
-  if (selectedLevel || !id?.startsWith('data/pl_crafts/') || id.endsWith('/koelsch'))
+  if (selectedLevel || !id)
   {
-    alert('Open a player craft in the Models tab first (the Naboo Starfighter is encrypted and cannot be changed yet).');
+    alert('Open a model in the Models tab first.');
+
+    return;
+  }
+
+  const object = (await loadModel(id)).hob.objects.length === 1 ? 0 : selectedObj;
+
+  if (object < 0)
+  {
+    alert('This file holds several models: pick one in the list first.');
 
     return;
   }
@@ -1085,27 +1251,39 @@ async function importCraftModel()
     gltf.scene.updateMatrixWorld(true);
 
     const model = await loadModel(id);
-    const slots = craftImportSlots(model.hob, model.hmt);
+    const slots = craftImportSlots(model.hob, model.hmt, object);
 
-    if (!slots.length)
-      throw new Error('This craft has no texture slot that can take the import');
+    // A package object whose every texture other models also draw takes the import in its colours only, on a material of its own body.
+    const flatMat = model.hob.objects[object].lods[0].flat().find((p) => !p.name && p.faces.length)?.faces[0].mat;
+    const shared = 'Every texture this model draws is shared with other models in the level, so the import can\'t bring its own textures. Import it in its colours only?';
+
+    if (!slots.length && (flatMat == null || !confirm(shared)))
+      return;
 
     const tris = [];
     const v = new THREE.Vector3();
     const engines = [];
+    const trails = [];
+
+    // The craft's named parts (engine glows glw_, flames eng_, glass wnd_) stay its own, so a mesh under one of those names, as an
+    // exported model brings them back, is left out rather than added as solid faces.
+    const ownParts = new Set([...model.hob.objects[object].partNames.values()].filter(Boolean));
 
     gltf.scene.traverse((o) => {
       if (!o.isMesh && !o.children.length && /^eng_/i.test(o.name))
         engines.push(o.getWorldPosition(new THREE.Vector3()).toArray());
 
-      if (!o.isMesh)
+      if (!o.isMesh && !o.children.length && /^trl_/i.test(o.name))
+        trails.push(o.getWorldPosition(new THREE.Vector3()).toArray());
+
+      if (!o.isMesh || ownParts.has(o.name))
         return;
 
       // A mesh (or a parent) named after a craft node, e.g. wngrot_a, goes into that node's part so it keeps animating.
       let node = '';
 
       for (let p = o; p && !node; p = p.parent)
-        if (model.hob.objects[0].nodeNames.has(p.name))
+        if (model.hob.objects[object].nodeNames.has(p.name))
           node = p.name;
 
       const g = o.geometry;
@@ -1147,7 +1325,7 @@ async function importCraftModel()
 
     busy(null);
 
-    const options = await askCraftImport(file.name, model.hob, engines);
+    const options = await askCraftImport(file.name, model.hob, engines, object, trails);
 
     if (!options)
       return;
@@ -1163,11 +1341,14 @@ async function importCraftModel()
     const slotOf = new Map(ranked.map((m, i) => [m, slots[Math.min(i, slots.length - 1)]]));
 
     for (const t of tris)
-      t.mat = slotOf.get(t.map).mat;
+      if (slots.length)
+        t.mat = slotOf.get(t.map).mat;
+      else
+        [t.mat, t.uv] = [flatMat, null];
 
     const dv = await rom.read(id + '_HOB');
-    const out = hobImportCraft(u8(dv), model.hob, tris, { mat: slots[0].mat, engines, ...options });
-    const faces = parseHOB(new DataView(out.buffer, out.byteOffset, out.byteLength)).objects[0].lods[0].flat().reduce((s, p) => s + p.faces.length, 0);
+    const out = hobImportCraft(u8(dv), model.hob, tris, { mat: slots[0]?.mat ?? flatMat, engines, trails, object, ...options });
+    const faces = parseHOB(new DataView(out.buffer, out.byteOffset, out.byteLength)).objects[object].lods[0].flat().reduce((s, p) => s + p.faces.length, 0);
 
     if (faces > CRAFT_MAX_FACES)
       throw new Error(`${file.name} has ${faces} faces after import and the game runs out of memory above ${CRAFT_MAX_FACES}. Reduce it (Blender: Decimate modifier) and import again.`);
@@ -1192,13 +1373,36 @@ async function importCraftModel()
 
     await editAsset(id + '_HOB', () => out);
 
-    await editAsset(id + '_HMT', (bytes) => {
-      for (const [tex, rgba] of images)
-        encodeTexture(bytes, tex, rgba, model.hmt.textures);
-    });
+    if (images.length)
+    {
+      await editAsset(id + '_HMT', (bytes) => {
+        for (const [tex, rgba] of images)
+          encodeTexture(bytes, tex, rgba, model.hmt.textures);
+      });
+    }
 
     modelCache.delete(id);
     clearCaches();
+
+    // A new ship's HUD icons, blueprint and shadow follow its model.
+    const ship = modShips.find((s) => id === `data/pl_crafts/${s.id}`);
+
+    if (ship)
+      await shipPictures(ship);
+
+    // A ship's .glb with an animation: its first clip becomes the special button's (engaged at its end), on the parts it names.
+    if (ship && gltf.animations.length)
+    {
+      const placement = craftImportPlacement(model.hob, tris, options.plusZ ?? true, object);
+      const bytes = shipClipFromGltf(gltf, model.hob.objects[object], placement);
+
+      if (bytes)
+        await editAsset(`mod/assets/pl_crafts/a_${ship.id}`, () => bytes, `${ship.name}: special animation`);
+
+      // The model's animation list is built once per model: rebuild it so the new clip shows.
+      $('optAnim').dataset.id = '';
+    }
+
     await showModel(id, selectedObj, true);
   } catch (e) {
     alert(e.message);
@@ -1207,16 +1411,506 @@ async function importCraftModel()
   }
 }
 
-$('btnImport').onclick = importCraftModel;
+// The glb's special-button animation (one named "special", else the explorer's own X-wing / shuttle closing sweep, else the first),
+// sampled at 30 per second (at most 64 keys): each object it moves that is named after a part of obj, as a turn and move from the pose the model was imported in. Null when it moves none.
+function shipClipFromGltf(gltf, obj, placement)
+{
+  const byName = (n) => gltf.animations.find((a) => a.name.toLowerCase() === n);
+  const clip = byName('special') ?? byName('sfoils_close') ?? byName('wings_lower') ?? gltf.animations[0];
+  const moved = new Set(clip.tracks.map((t) => t.name.split('.')[0]));
+  const parts = [];
 
-async function replaceTexture(id, name) {
-  if (id.endsWith('/koelsch'))
+  gltf.scene.traverse((o) => {
+    if (obj.nodeNames.has(o.name) && moved.has(o.name))
+      parts.push({
+        o,
+        node: obj.nodeNames.get(o.name),
+        q0: o.getWorldQuaternion(new THREE.Quaternion()),
+        p0: o.getWorldPosition(new THREE.Vector3()),
+        samples: []
+      });
+  });
+
+  if (!parts.length)
+    return null;
+
+  const mixer = new THREE.AnimationMixer(gltf.scene);
+  const keys = Math.min(64, Math.max(2, Math.round(clip.duration * 30) + 1));
+
+  // Once, held at the end: a repeating action wraps to the first frame at exactly its duration.
+  const action = mixer.clipAction(clip);
+
+  action.setLoop(THREE.LoopOnce, 1);
+  action.clampWhenFinished = true;
+  action.play();
+
+  for (let k = 0; k < keys; k++)
   {
-    alert('The Naboo Starfighter textures are encrypted in the ROM and cannot be patched yet.');
+    const t = k / (keys - 1);
 
-    return;
+    mixer.setTime(t * clip.duration);
+    gltf.scene.updateMatrixWorld(true);
+
+    for (const p of parts)
+    {
+      const q = p.o.getWorldQuaternion(new THREE.Quaternion()).multiply(p.q0.clone().invert());
+      const d = p.o.getWorldPosition(new THREE.Vector3()).sub(p.p0);
+
+      p.samples.push({ t, q: [q.x, q.y, q.z, q.w], d: d.toArray() });
+    }
   }
 
+  mixer.stopAllAction();
+
+  return craftClipBake(obj, placement, new Map(parts.map((p) => [p.node, { origin: p.p0.toArray(), samples: p.samples }])), Math.round(clip.duration * 1000));
+}
+
+$('btnImport').onclick = importCraftModel;
+
+// A model drawn from above with its nose up, filling a w x h picture with a small margin, as the HUD icons show the craft: RGBA, top row
+// first, its brightness stretched so the lightest part is white. lines draws its edges in white, as the AVAILABLE CRAFT blueprints do.
+async function topViewPixels(id, w, h, lines = false)
+{
+  const model = await loadModel(id);
+  const mesh = buildObject(model.hob.objects[0], model, id, { tris: 0, verts: 0, parts: 0 });
+  const stage = new THREE.Scene();
+
+  if (lines)
+  {
+    const edge = new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true });
+
+    mesh.traverse((o) => {
+      if (o.isMesh)
+        o.material = edge;
+    });
+  }
+
+  stage.add(mesh);
+  mesh.updateWorldMatrix(true, true);
+
+  const box = new THREE.Box3().setFromObject(mesh);
+  const size = box.getSize(new THREE.Vector3());
+  const mid = box.getCenter(new THREE.Vector3());
+  const unit = Math.max(size.x / w, size.z / h) * 0.55;
+  const lens = new THREE.OrthographicCamera(-unit * w, unit * w, unit * h, -unit * h, 0.01, size.y + 20);
+
+  // The game's Y points down, so above is -Y.
+  lens.position.set(mid.x, box.min.y - 10, mid.z);
+  lens.up.set(0, 0, 1);
+  lens.lookAt(mid);
+
+  // Drawn 4x larger and averaged down. A GPU read-back row must be a multiple of 256 bytes, so the big picture is 64-pixel aligned.
+  const big = 4;
+  const bw = Math.ceil((w * big) / 64) * 64;
+  const bh = h * big;
+  const target = new THREE.RenderTarget(bw, bh, { samples: 4 });
+  const held = renderer.getRenderTarget();
+  const clear = renderer.getClearColor(new THREE.Color());
+  const alpha = renderer.getClearAlpha();
+
+  lens.left = -unit * w * (bw / (w * big));
+  lens.right = unit * w * (bw / (w * big));
+  lens.updateProjectionMatrix();
+  renderer.setRenderTarget(target);
+  renderer.setClearColor(0x000000, 0);
+  renderer.render(stage, lens);
+  renderer.setRenderTarget(held);
+  renderer.setClearColor(clear, alpha);
+
+  const read = await renderer.readRenderTargetPixelsAsync(target, 0, 0, bw, bh);
+
+  target.dispose();
+
+  // The w * big middle columns of the big picture, averaged into w x h; lines take each block's brightest so thin edges stay lit.
+  const out = new Uint8Array(w * h * 4);
+  const x0 = (bw - w * big) >> 1;
+
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++)
+      for (let c = 0; c < 4; c++)
+      {
+        let sum = 0;
+        let most = 0;
+
+        for (let dy = 0; dy < big; dy++)
+          for (let dx = 0; dx < big; dx++)
+          {
+            const v = read[((y * big + dy) * bw + x0 + x * big + dx) * 4 + c];
+
+            sum += v;
+            most = Math.max(most, v);
+          }
+
+        out[(y * w + x) * 4 + c] = lines ? most : sum / (big * big);
+      }
+
+  let top = 1;
+
+  for (let i = 0; i < w * h; i++)
+    if (out[i * 4 + 3])
+      top = Math.max(top, out[i * 4], out[i * 4 + 1], out[i * 4 + 2]);
+
+  for (let i = 0; i < w * h * 4; i++)
+    if (i % 4 !== 3)
+      out[i] = Math.min(255, (out[i] * 255) / top);
+
+  return out;
+}
+
+// A ship's HUD icons (both sizes), AVAILABLE CRAFT blueprint and shadow drawn from its model, their textures named after the ship's place in
+// ships.json.
+async function shipPictures(ship)
+{
+  const model = `data/pl_crafts/${ship.id}`;
+  const tag = '~' + Math.max(0, modShips.findIndex((s) => s.id === ship.id));
+
+  for (const size of ['ov', '1v'])
+  {
+    const path = `data/ov/${size}_${ship.id}`;
+    const { w, h } = hudIconSize(await rom.read(path));
+    const rgba = await topViewPixels(model, w, h);
+
+    await editAsset(path, (b) => texFileRename(hudIconWrite(b, rgba), tag), `${ship.name}: HUD icon`);
+  }
+
+  const blueprint = `data/blueprints/${ship.id}`;
+  const { w, h } = hudIconSize(await rom.read(blueprint));
+  const rgba = await topViewPixels(model, w, h, true);
+
+  await editAsset(blueprint, (b) => texFileRename(blueprintWrite(b, rgba), tag), `${ship.name}: blueprint`);
+
+  // The shadow: its first image holds the craft's left half from above, nose up, as 4-bit coverage (the game mirrors it).
+  const shadow = `data/pl_crafts/s_${ship.id}`;
+  const half = hudIconSize(await rom.read(shadow));
+  const top = await topViewPixels(model, half.w * 2, half.h);
+  const cover = new Uint8Array(half.w * half.h * 4).fill(255);
+
+  for (let y = 0; y < half.h; y++)
+    for (let x = 0; x < half.w; x++)
+      cover[(y * half.w + x) * 4 + 3] = top[(y * half.w * 2 + x) * 4 + 3];
+
+  await editAsset(shadow, (b) => texFileRename(blueprintWrite(b, cover), tag), `${ship.name}: shadow`);
+}
+
+// The hangar craft (SHIP_TEMPLATES key) whose exterior model id is, null for any other model.
+const shipTemplateOf = (id) => Object.entries(SHIP_TEMPLATES).find(([, t]) => t.model === id)?.[0] ?? null;
+
+// A new hangar ship that flies as the open craft: its ships.json entry, a copy of the craft's model named after it and its hangar records.
+// Opens the copy, ready for Import model.
+async function newShip(named = null)
+{
+  const template = shipTemplateOf(selected);
+
+  if (!template)
+  {
+    alert('Open a hangar craft\'s model (the X-wing, say) in the Models tab first.');
+
+    return null;
+  }
+
+  const ships = shipsParse(await virtualText(MOD_SHIPS));
+  const name = (named ?? prompt('Name of the new ship, as the hangar shows it', 'New ship'))?.trim();
+
+  if (!name)
+    return null;
+
+  const taken = [...rom.assets.keys()].map((k) => k.split('/').pop().replace(/_(HOB|HMT)$/, ''));
+  const ship = shipNew(ships, name, template, taken, await rom.read(HANGAR_DAT));
+
+  if (!ship)
+  {
+    alert(`The hangar has room for ${SHIP_MAX} new ships, and they are all taken.`);
+
+    return null;
+  }
+
+  await historyGroup(`New ship: ${ship.name}`, async () => {
+    await editText(MOD_SHIPS, shipsWrite([...ships, ship]), `New ship: ${ship.name}`);
+    await applyModLevels();
+    await editAsset(`data/pl_crafts/${ship.id}_HOB`, (b) => hobSetObjectName(b, ship.id), `New ship: ${ship.name}`);
+    await editAsset(`data/pl_crafts/${ship.id}_HMT`, (b) => hmtOwnTextures(b, ship.id), `New ship: ${ship.name}`);
+    await editAsset('data/frontend/hangar/dat', (b) => shipHangarAdd(b, ship), `New ship: ${ship.name} in the hangar`);
+    await shipPictures(ship);
+  });
+
+  await showModel(`data/pl_crafts/${ship.id}`);
+
+  return ship;
+}
+
+$('btnNewShip').onclick = () => newShip();
+
+const HANGAR_DAT = 'data/frontend/hangar/dat';
+
+// The hangar floor from above: the scene's ships and props, the line the camera looks along (camroute_1) and the open ship; a click puts
+// the ship on the camera's line through it (as far from the camera as its craft stands from its own) and Place moves it there.
+async function placeShip(at = null)
+{
+  const ship = modShips.find((s) => selected === `data/pl_crafts/${s.id}`);
+
+  if (!ship)
+    return;
+
+  const dat = shipHangarRemove(await rom.read(HANGAR_DAT), ship.id);
+  const items = parseDAT(dvOf(dat)).items;
+  const skip = /^(floor_|int_|ceiling|hangar|roof|stars|planet|transport|camstart|camwatch)/;
+  const things = items.filter((i) => i.type === 0 && i.pos && !skip.test(i.name));
+  const crafts = new Set(Object.values(SHIP_TEMPLATES).map((t) => t.record));
+  const look = splineAt(dvOf(dat), items.find((i) => i.name === 'camroute_1'));
+  let spot = at ? shipSpotAt(dat, at) : null;
+  let stand = spot ? shipStandAt(dat, ship.template, spot) : null;
+
+  if (at)
+    return applyShipSpot(ship, spot);
+
+  const size = 360;
+  const xs = things.map((i) => i.pos[0]);
+  const zs = things.map((i) => i.pos[2]);
+  const [x0, x1, z0, z1] = [Math.min(...xs) - 4, Math.max(...xs) + 4, Math.min(...zs) - 4, Math.max(...zs) + 4];
+  const scale = size / Math.max(x1 - x0, z1 - z0);
+  const toMap = (x, z) => [(x - x0) * scale, (z - z0) * scale];
+  const d = elem('dialog', { className: 'panel levelDialog' });
+  const c = elem('canvas', { className: 'hangarMap', width: size, height: size, title: 'Click where the ship should stand' });
+  const go = elem('button', { textContent: 'Place', disabled: true });
+  const cancel = elem('button', { textContent: 'Cancel' });
+  const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+  const draw = () => {
+    const g = c.getContext('2d');
+
+    g.fillStyle = css('--bg');
+    g.fillRect(0, 0, size, size);
+    g.strokeStyle = css('--line');
+    g.beginPath();
+
+    for (let k = 0; k <= 100; k++) {
+      const p = look(k / 100);
+
+      g[k ? 'lineTo' : 'moveTo'](...toMap(p[0], p[2]));
+    }
+
+    g.stroke();
+    g.font = '10px sans-serif';
+
+    for (const i of things)
+    {
+      const [x, y] = toMap(i.pos[0], i.pos[2]);
+      const craft = crafts.has(i.name) || modShips.some((s) => s.id === i.name);
+
+      g.fillStyle = craft ? css('--obj') : css('--dim');
+      g.fillRect(x - (craft ? 4 : 2), y - (craft ? 4 : 2), craft ? 8 : 4, craft ? 8 : 4);
+
+      if (craft)
+        g.fillText(i.name, x + 6, y + 3);
+    }
+
+    if (stand) {
+      const [x, y] = toMap(stand[0], stand[2]);
+
+      g.fillStyle = css('--accent');
+      g.beginPath();
+      g.arc(x, y, 6, 0, Math.PI * 2);
+      g.fill();
+      g.fillText(ship.name, x + 8, y + 3);
+    }
+  };
+
+  c.onclick = (e) => {
+    const r = c.getBoundingClientRect();
+    const x = ((e.clientX - r.left) / r.width) * size;
+    const y = ((e.clientY - r.top) / r.height) * size;
+
+    spot = shipSpotAt(dat, [x / scale + x0, y / scale + z0]);
+    stand = shipStandAt(dat, ship.template, spot);
+    go.disabled = false;
+    draw();
+  };
+
+  cancel.onclick = () => d.close();
+
+  go.onclick = async () => {
+    d.close();
+    await applyShipSpot(ship, spot);
+  };
+
+  d.onclose = () => d.remove();
+
+  const actions = elem('div', { className: 'actions' });
+
+  actions.append(go, cancel);
+  d.append(elem('b', { textContent: `Place ${ship.name} in the hangar` }), c, elem('small', { textContent: 'Squares are the hangar\'s craft and props; the line is where the camera looks.' }), actions);
+  document.body.append(d);
+  draw();
+  d.showModal();
+}
+
+// A ship moved to a spot: its stop in ships.json and its hangar records rebuilt there.
+async function applyShipSpot(ship, spot)
+{
+  const ships = shipsParse(await virtualText(MOD_SHIPS));
+  const own = ships.find((s) => s.id === ship.id);
+
+  own.stop = spot.stop;
+  own.pos = spot.pos;
+
+  await historyGroup(`${ship.name}: place in hangar`, async () => {
+    await editText(MOD_SHIPS, shipsWrite(ships), `${ship.name}: place in hangar`);
+    await applyModLevels();
+    await editAsset(HANGAR_DAT, (b) => shipHangarAdd(shipHangarRemove(b, ship.id), own, spot), `${ship.name}: place in hangar`);
+  });
+
+  return own;
+}
+
+$('btnPlaceShip').onclick = () => placeShip();
+
+// The ship's own hangar line, pl_crafts/v_<id>, played instead of its craft's.
+$('btnShipLine').onclick = () => {
+  const ship = modShips.find((s) => selected === `data/pl_crafts/${s.id}`);
+
+  if (!ship)
+    return;
+
+  const d = elem('dialog', { className: 'panel levelDialog' });
+  const close = elem('button', { textContent: 'Close' });
+  const { row, note } = recordingControls(`mod/assets/pl_crafts/v_${ship.id}`, 'craft', () => {});
+  const actions = elem('div', { className: 'actions' });
+
+  close.onclick = () => d.close();
+  d.onclose = () => d.remove();
+  actions.append(close);
+  d.append(elem('b', { textContent: `${ship.name}: craft line` }), elem('small', { textContent: 'Plays in the hangar when the ship comes into view.' }), row, note, actions);
+  document.body.append(d);
+  d.showModal();
+};
+
+// The ship's abilities (ships.json "behaviours" and "special"): the special button is the X-wing's S-foils, the V-wing's boost, none or
+// its own settings; the aim assist is the A-wing's.
+const SHIP_SPECIALS = [
+  ['none', 'None'],
+  ['sfoils', 'S-foils (X-wing)'],
+  ['boost', 'Boost (V-wing)'],
+  ['custom', 'Your own'],
+];
+
+$('btnShipAbilities').onclick = async () => {
+  const ship = modShips.find((s) => selected === `data/pl_crafts/${s.id}`);
+
+  if (!ship)
+    return;
+
+  const have = new Set(shipBehaviours(ship));
+  const d = elem('dialog', { className: 'panel levelDialog' });
+  const close = elem('button', { textContent: 'Close' });
+  const actions = elem('div', { className: 'actions' });
+  const own = ship.special ?? {};
+  const kind = ship.special ? 'custom' : (have.has('sfoils') ? 'sfoils' : (have.has('boost') ? 'boost' : 'none'));
+  const special = selectOf(SHIP_SPECIALS, kind, { title: 'What the special button does' });
+
+  const mode = selectOf([
+    ['toggle', 'Toggle'],
+    ['timed', 'Timed']
+  ], own.mode ?? 'toggle', { title: 'Toggle: a press engages, a press or the brake releases. Timed: engaged for a while, then a cooldown' });
+
+  const num = (value, min, max, step, title) => elem('input', { type: 'number', value, min, max, step, title, style: 'width:4.5em' });
+  const speed = num(own.speed ?? 1.5, 0.25, 3, 0.05, 'Speed while engaged: times the craft\'s speed (toggle) or its top speed (timed)');
+  const seconds = num(own.seconds ?? 1, 0.1, 60, 0.1, 'Seconds to engage (toggle) or seconds engaged (timed)');
+  const cooldown = num(own.cooldown ?? 0, 0, 120, 0.5, 'Seconds before it can engage again (timed)');
+  const guns = elem('input', { type: 'checkbox', checked: own.guns === false, title: 'The guns don\'t fire while it is engaged' });
+  const aim = elem('input', { type: 'checkbox', checked: have.has('aim') });
+  const custom = elem('div', { className: 'lookRow' }, mode, ' x', speed, ' ', seconds, 's ', cooldown, 's ', elem('label', { title: guns.title }, guns, ' guns off'));
+
+  const sync = () => {
+    custom.hidden = special.value !== 'custom';
+    cooldown.hidden = mode.value !== 'timed';
+  };
+
+  const save = async () => {
+    const ships = shipsParse(await virtualText(MOD_SHIPS));
+    const entry = ships.find((s) => s.id === ship.id);
+
+    entry.behaviours = [...(['sfoils', 'boost'].includes(special.value) ? [special.value] : []), ...(aim.checked ? ['aim'] : [])];
+
+    if (special.value === 'custom')
+      entry.special = {
+        mode: mode.value,
+        speed: +speed.value,
+        seconds: +seconds.value,
+        cooldown: mode.value === 'timed' ? +cooldown.value : 0,
+        guns: !guns.checked
+      };
+    else
+      delete entry.special;
+
+    await editText(MOD_SHIPS, shipsWrite(ships), `${ship.name}: abilities`);
+    await applyModLevels();
+  };
+
+  for (const input of [special, mode, speed, seconds, cooldown, guns, aim])
+    input.onchange = () => {
+      // A new mode starts from its preset's numbers: the S-foils' 1 s at 1.5x, the boost's 6 s at 4/3 of top speed and 6 s cooldown.
+      if (input === mode)
+        [speed.value, seconds.value, cooldown.value] = mode.value === 'timed' ? [1.33, 6, 6] : [1.5, 1, 0];
+
+      sync();
+      save();
+    };
+
+  sync();
+  d.append(
+    elem('label', { title: special.title }, 'Special button ', special),
+    custom,
+    elem('label', { title: 'Shots home in on targets in a wider cone' }, aim, ' Strong aim assist (A-wing)')
+  );
+
+  // The special button's animation: the ship's own (baked from its imported model) or its craft's.
+  const clip = await rom.read(`mod/assets/pl_crafts/a_${ship.id}`).catch(() => null);
+  const anim = clip?.byteLength ? parseAnim(clip) : null;
+  const names = [...((await loadModel(selected)).hob.objects[0].nodeNames ?? new Map())];
+  const moved = anim ? anim.tracks.map((t, i) => (t ? (names.find(([, n]) => n === i + 1)?.[0] ?? `part ${i + 1}`) : null)).filter(Boolean) : [];
+
+  d.append(elem('small', { textContent: moved.length ? `Special animation: your model's, moving ${moved.join(', ')}.` : 'Special animation: the craft\'s own. An animation in an imported model replaces it.' }));
+
+  // The ship's own rules (pl_crafts/<id>_rules.txt): run with the level's while it flies.
+  const rulesBtn = elem('button', { textContent: 'Rules…', title: 'Rules that run while this ship flies: the special button\'s events and craft actions' });
+
+  rulesBtn.onclick = () => shipRules(ship);
+  close.onclick = () => d.close();
+  d.onclose = () => d.remove();
+  actions.append(rulesBtn, close);
+  d.prepend(elem('b', { textContent: `${ship.name}: abilities` }));
+  d.append(actions);
+  document.body.append(d);
+  d.showModal();
+};
+
+// A ship's rules.txt as text, checked like a level's with the craft actions and special-button events (and loaded mods' actions).
+async function shipRules(ship)
+{
+  const path = `mod/assets/pl_crafts/${ship.id}_rules.txt`;
+  const d = elem('dialog', { className: 'panel levelDialog' });
+  const close = elem('button', { textContent: 'Close' });
+  const ctx = { objects: {}, objectives: false, ext: [...CRAFT_RULE_EXT, ...ruleExt] };
+  const example = 'when custom special_engaged every time\n    message 3 Boost!\n    craft.speed times=1.2\nend\n\nwhen custom special_released every time\n    craft.speed times=1\nend\n';
+
+  const code = codeBox({
+    value: await virtualText(path),
+    rows: 14,
+    placeholder: example,
+    title: 'This ship\'s rules: when … [if …], one action a line, end',
+    check: (t) => rulesScriptCheck(t, ctx),
+    complete: (t, c) => rulesComplete(t, c, ctx),
+    onChange: (t) => editText(path, t, `${ship.name}: rules`)
+  });
+
+  close.onclick = () => d.close();
+  d.onclose = () => d.remove();
+  d.append(elem('b', { textContent: `${ship.name}: rules` }), elem('small', { textContent: 'They run with the level\'s rules while the ship flies. Events: custom special_engaged, special_released, special_ready, fire_locked. Actions: craft.speed times=, craft.guns on=, craft.animation at=, craft.ready.' }), code, elem('div', { className: 'actions' }, close));
+  document.body.append(d);
+  d.showModal();
+}
+
+async function replaceTexture(id, name) {
   const file = await pickImage();
 
   if (!file)
@@ -1253,7 +1947,7 @@ async function replaceTexture(id, name) {
 // The level's HMP is edited as one continuous height grid (hmpGrid) and re-tiled by writeHMP; the terrain mesh is rebuilt while
 // dragging and the new HMP is committed as an edit when the stroke ends. Heights are stored game Y-down, so raising subtracts.
 let sculpt = null;
-const sculptActive = () => $('optSculpt').checked && selectedLevel && !!sculpt;
+const sculptActive = () => $('optSculpt').checked && selectedLevel && !!sculpt && !mapSizeOn;
 
 async function loadSculpt()
 {
@@ -1266,6 +1960,7 @@ async function loadSculpt()
   if (!$('optSculpt').checked || !selectedLevel || !rom.assets.has(selected + '/hmp'))
   {
     controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
+    mapSizingShow();
 
     return;
   }
@@ -1301,13 +1996,14 @@ async function loadSculpt()
   };
 
   sculpt.committed = sculpt.grid.hts.slice();
-  controls.mouseButtons.LEFT = null;
+  controls.mouseButtons.LEFT = mapSizeOn ? THREE.MOUSE.ROTATE : null;
   fillSculptPalette();
   sculptBudget(hmp.tiles.length);
   paintBudgetShow();
   sculptStatus('');
   showTileGrid();
   sculptRangeShow();
+  mapSizingShow();
 }
 
 // Stored heights are -128..127 steps of the level's height scale, so each level has its own height range.
@@ -2001,6 +2697,10 @@ async function commitTerrain(bytes) {
         waves: Math.max(1, Math.round(w.waves * waterK))
       }));
 
+    // Level lights keep their height in stored steps too.
+    if (waterK !== 1 && lightsLevel)
+      await lightsLevelAdjust(lightsLevel.level, { ky: waterK, withGame: stockDir(sculpt.dir) === sculpt.dir }, 'Terrain');
+
     for (const k of [...terrainCache.keys()])
       if (k.startsWith(sculpt.dir + '|'))
         terrainCache.delete(k);
@@ -2074,6 +2774,219 @@ async function importHeightmap() {
   }
 
   await commitTerrain(bytes);
+}
+
+// Map size: while its button is on, the map's outline and the flight area show a handle in the middle of each side, and the brush rests.
+// Dragging a map side out grows that side by whole cells (2 units). 128 cells a side is what has been flown in the game.
+const MAP_MAX = 128;
+const mapLineMat = new THREE.LineBasicMaterial({ color: 0xe8b84a, depthTest: false, transparent: true });
+const mapHandleMat = new THREE.MeshBasicMaterial({ color: 0xe8b84a, depthTest: false, transparent: true });
+let mapSizeOn = false;
+let mapSizing = null;
+let mapDrag = null;
+let mapFlightShown = false;
+
+// The map handles sit this far outside the edge, clear of a flight area side on the edge itself.
+const MAP_HANDLE_OUT = 3;
+
+// The map's outline in game space with add[side] more cells on its -X, +X, -Z and +Z sides.
+const mapRect = (m) => [-m.add[0] * 2, (m.w + m.add[1]) * 2, -m.add[2] * 2, (m.h + m.add[3]) * 2];
+
+function mapSizingDraw()
+{
+  const [x0, x1, z0, z1] = mapRect(mapSizing);
+  const [W, H] = [mapSizing.w * 2, mapSizing.h * 2];
+  const at = (x, z) => new THREE.Vector3(x, levelHeight(Math.min(Math.max(x, 0), W), Math.min(Math.max(z, 0), H)) - 0.3, z);
+  const ring = [];
+
+  for (const [ax, az, bx, bz] of [[x0, z0, x1, z0], [x1, z0, x1, z1], [x1, z1, x0, z1], [x0, z1, x0, z0]])
+  {
+    const n = Math.max(2, Math.ceil(Math.hypot(bx - ax, bz - az) / 0.5));
+
+    for (let i = 0; i < n; i++)
+      ring.push(at(ax + (bx - ax) * i / n, az + (bz - az) * i / n));
+  }
+
+  ring.push(ring[0].clone());
+  setOutline(mapSizing.line, ring);
+
+  const mx = (x0 + x1) / 2;
+  const mz = (z0 + z1) / 2;
+  const o = MAP_HANDLE_OUT;
+
+  [[x0 - o, mz], [x1 + o, mz], [mx, z0 - o], [mx, z1 + o]].forEach(([x, z], k) => mapSizing.handles[k].position.copy(at(x, z)));
+
+  // The flight area keeps its distance from the edges, so it moves with them.
+  if (flightArea)
+  {
+    setOutline(flightArea.line, flightOutline(flightArea.insets));
+    placeFlightHandles();
+  }
+}
+
+// Sides dragged out are kept and applied when the outline goes: Map size turned off, terrain editing left or the level reloaded.
+function mapSizingShow()
+{
+  const pending = mapSizing?.add.some(Boolean) ? mapSizing : null;
+
+  mapSizing?.group.removeFromParent();
+  mapSizing = null;
+
+  if (pending)
+    return void growMapSides(pending);
+
+  $('btnMapSize').classList.toggle('on', mapSizeOn);
+
+  const world = root?.getObjectByName('markers')?.parent;
+  const on = mapSizeOn && !!sculpt && !!world;
+
+  // The Water, fog and clouds panel shows the flight area too; only the box shown here is taken down.
+  if (on || mapFlightShown)
+    flightAreaShow(on);
+
+  mapFlightShown = on;
+
+  if (!on)
+    return;
+
+  const group = new THREE.Group();
+  const line = outlineLine(mapLineMat);
+
+  line.renderOrder = 11;
+  group.add(line);
+
+  const handles = [0, 1, 2, 3].map(() => {
+    const h = new THREE.Mesh(cornerGeo, mapHandleMat);
+
+    h.renderOrder = 10;
+    group.add(h);
+
+    return h;
+  });
+
+  world.add(group);
+  mapSizing = { group, line, handles, add: [0, 0, 0, 0], dir: sculpt.dir, w: sculpt.grid.w, h: sculpt.grid.h, level: lightsLevel?.level };
+  mapSizingDraw();
+  sculptStatus(`Map ${sculpt.grid.w} x ${sculpt.grid.h} cells: drag a yellow side out to grow it, a red one to move the flight area`);
+}
+
+// The point under the cursor on the level-space plane at height y.
+function dragPlanePoint(e, y)
+{
+  const r = canvas.getBoundingClientRect();
+
+  pointer.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(pointer, camera);
+
+  const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(new THREE.Vector3(0, 1, 0), root.localToWorld(new THREE.Vector3(0, y, 0)));
+  const w = raycaster.ray.intersectPlane(plane, new THREE.Vector3());
+
+  return w && root.worldToLocal(w);
+}
+
+canvas.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0 || !mapSizing)
+    return;
+
+  const h = pick(e, mapSizing.handles);
+
+  if (!h)
+    return;
+
+  mapDrag = { side: mapSizing.handles.indexOf(h.object), y: h.object.position.y };
+  controls.enabled = false;
+  canvas.setPointerCapture(e.pointerId);
+  e.stopImmediatePropagation();
+}, true);
+canvas.addEventListener('pointermove', (e) => {
+  if (!mapDrag)
+    return;
+
+  e.stopImmediatePropagation();
+
+  const l = dragPlanePoint(e, mapDrag.y);
+
+  if (!l)
+    return;
+
+  const { side } = mapDrag;
+  const add = mapSizing.add;
+  const along = side < 2 ? l.x : l.z;
+  const span = side < 2 ? mapSizing.w : mapSizing.h;
+  const out = (side % 2 ? along - span * 2 : -along) / 2 - MAP_HANDLE_OUT / 2;
+
+  add[side] = Math.max(0, Math.min(Math.round(out), MAP_MAX - span - add[side ^ 1]));
+  mapSizingDraw();
+  sculptStatus(`Map ${mapSizing.w + add[0] + add[1]} x ${mapSizing.h + add[2] + add[3]} cells, made when you turn Map size off`);
+}, true);
+canvas.addEventListener('pointerup', (e) => {
+  if (!mapDrag)
+    return;
+
+  e.stopImmediatePropagation();
+  mapDrag = null;
+  controls.enabled = true;
+}, true);
+
+// The cutscenes that play over a level: a mod level's own (named after its folder), a stock level's idN files.
+function levelCutscenes(dir)
+{
+  const ml = modLevelOf(dir);
+  const n = parseInt(dir.split('/lv_')[1], 36);
+  const kinds = [['intro', 'Intro'], ['extro', 'Extro'], ['special', 'Ending ceremony']];
+
+  return kinds.map(([kind, label]) => [ml ? `data/cuts/${ml.folder}_${kind}` : `data/cuts/id${n}_${kind}`, label])
+    .filter(([path]) => (ml || n <= 15 || n === 19) && rom.assets.has(path));
+}
+
+// Grows the map by add cells on its -X, +X, -Z and +Z sides as one undo step. The game reads the ground from world (0, 0), so growing -X or
+// -Z moves everything in the level over with the old ground: objects, paths and areas, the ground's lights, the level's cutscenes (and
+// their snapshots) and its level light presets.
+async function growMapSides({ dir, w, h, level, add: [l, r, t, b] })
+{
+
+  const dx = l * 2;
+  const dz = t * 2;
+  const label = `Map size ${w + l + r} x ${h + t + b}`;
+
+  try {
+    await historyGroup(label, async () => {
+      await editAsset(dir + '/hmp', (bytes) => hmpShiftLights(hmpResize(bytes, w + l + r, h + t + b, l, t), dx, dz), label);
+
+      if (!dx && !dz)
+        return;
+
+      await editAsset(dir + '/dat', (bytes) => datShift(bytes, dx, dz), label);
+
+      for (const [path] of levelCutscenes(dir))
+      {
+        await editAsset(path, (bytes) => cutsceneShift(bytes, dx, dz), label);
+
+        const doc = await readAuthoring(path);
+        const snaps = Object.values(doc.tracks).flatMap((tr) => tr.snaps ?? []);
+
+        for (const s of snaps)
+          s.p = [s.p[0] + dx * 4, s.p[1], s.p[2] + dz * 4];
+
+        if (snaps.length)
+          await writeJson(authoringPath(path), doc, label);
+      }
+
+      if (level != null)
+        await lightsLevelAdjust(level, { dx, dz, withGame: stockDir(dir) === dir }, label);
+    });
+  } catch (e) {
+    alert(e.message);
+
+    return;
+  }
+
+  for (const k of [...terrainCache.keys()])
+    if (k.startsWith(dir + '|'))
+      terrainCache.delete(k);
+
+  if (selected === dir)
+    await reloadLevel(dir);
 }
 
 let stroke = null;
@@ -2376,6 +3289,13 @@ const needSculpt = (fn) => () => (sculpt ? fn() : ($('sculptInfo').textContent =
 $('btnHeightOut').onclick = needSculpt(exportHeightmap);
 $('btnHeightIn').onclick = needSculpt(importHeightmap);
 
+$('btnMapSize').onclick = needSculpt(() => {
+  mapSizeOn = !mapSizeOn;
+  sculptRing.visible = false;
+  controls.mouseButtons.LEFT = mapSizeOn ? THREE.MOUSE.ROTATE : null;
+  mapSizingShow();
+});
+
 for (const id of ['sculptRadius', 'sculptStrength'])
   $(id).oninput = () => ($(id + 'Val').textContent = $(id).value);
 
@@ -2522,7 +3442,8 @@ async function addCutCrawl()
 // The small menu of things to add, opened above the button that asked; rows are [label, note, action]. A second click closes it.
 let addMenuFor = null;
 
-function toggleAddMenu(button, rows)
+// at: [x, y] in the page to open the menu there (where something was clicked in the view) instead of above the button.
+function toggleAddMenu(button, rows, at = null)
 {
   const menu = $('cutAddMenu');
   const open = menu.hidden || addMenuFor !== button;
@@ -2543,6 +3464,14 @@ function toggleAddMenu(button, rows)
   }, elem('span', { textContent: label }), elem('small', { textContent: note }))));
 
   const b = button.getBoundingClientRect();
+
+  if (at)
+  {
+    menu.style.left = `${Math.max(10, Math.min(at[0] + 8, innerWidth - menu.offsetWidth - 10))}px`;
+    menu.style.top = `${Math.max(10, Math.min(at[1] + 8, innerHeight - menu.offsetHeight - 10))}px`;
+
+    return;
+  }
 
   menu.style.left = `${Math.max(10, b.right - menu.offsetWidth)}px`;
   menu.style.top = `${Math.max(10, b.top - menu.offsetHeight - 6)}px`;

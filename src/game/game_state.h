@@ -36,6 +36,10 @@ extern "C" {
     uint32_t rs64_state_cutscene_skips(void);    // cutscenes that stopped well before their end frame (skipped) so far
     // gCurrentLevel (u32 0x80130B70) as of the last poll.
     uint32_t rs64_state_level(void);
+    // The cutscene cinematicLoopBody was last called for: level and kind (0 intro, 1 outro, 2 special), and kind as a word.
+    void rs64_state_cutscene_note(uint32_t level, uint32_t kind);
+    uint32_t rs64_state_cutscene_level(void);
+    const char* rs64_state_cutscene_kind(void);
 
     int rs64_force_state(const char* id);         // stage a force; 0 ok, -1 unknown/no-slot
     int rs64_force_consume(int slot, int32_t* out, int out_cap);  // slot hooks call this

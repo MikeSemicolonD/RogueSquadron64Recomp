@@ -2,7 +2,7 @@
 # Checks one Linux package (RogueSquadron64Recomp-linux-<arch>-*.tar.xz, *.AppImage or *.flatpak) and prints PASS/FAIL/SKIP lines; exits 1 on any FAIL.
 # Usage: tools/release/linux/test-package.sh <package> [--boot <rom>] [--replay <rom> <save> <recording.rec>]
 #   always: arch of every binary, glibc floor, no host-only libraries bundled, launcher bits, no ROM/saves inside, --help (foreign arches via qemu)
-#   --boot: 90 s headless boot with the fake controller (host arch only); must reach the account menus with no fault
+#   --boot: 90 s headless boot with the fake controller (host arch only); must reach SELECT GAME with no fault
 #   --replay: tarball only, host arch only; lockstep replay with the given save seeded, compared against <recording>.hash
 set -uo pipefail
 REPO="$(cd "$(dirname "$0")/../../.." && pwd)"
@@ -62,18 +62,18 @@ check_no_rom() {
     [ -z "$found" ] && pass "no-rom-or-saves" || fail "no-rom-or-saves" "$found"
 }
 
-# Boot until the account menus (or a fault). Args: log file, then the command.
+# Boot until SELECT GAME (or a fault). Args: log file, then the command.
 boot_check() {
     local log="$1"; shift
     ROGUESQ_AUDIO_GAIN=0 ROGUESQ_LOG_GAMESTATE=1 ROGUESQ_HIDE_WINDOW=1 timeout 90 "$@" --fake-controller --auto-start 8000 > "$log" 2>&1
     local reached
-    reached="$(grep -ao 'state=menu\.account[a-z_.]*' "$log" | tail -1)"
+    reached="$(grep -ao 'state=menu\.select_game' "$log" | tail -1)"
     if grep -aqE "$fault_pattern" "$log"; then
         fail "boot" "$(grep -aE "$fault_pattern" "$log" | head -1 | cut -c1-100)"
     elif [ -n "$reached" ]; then
         pass "boot (${reached#state=})"
     else
-        fail "boot" "never reached the account menus (last: $(grep -ao 'state=[a-z_.]*' "$log" | tail -1))"
+        fail "boot" "never reached SELECT GAME (last: $(grep -ao 'state=[a-z_.]*' "$log" | tail -1))"
     fi
 }
 

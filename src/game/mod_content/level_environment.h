@@ -1,7 +1,11 @@
 #pragma once
-// A level's fog and clouds, from a mod's assets/level/<folder>/environment.json. No game access here.
+// A level's fog and clouds, from a mod's assets/level/<folder>/environment.json, and its sun colour from the level's hmp. No game access here.
 #include "json/json.hpp"
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -21,12 +25,18 @@ struct Environment {
     FogReach fogReach = FogReach::Auto;
     Color fogColor;
     bool clouds = false;
+
     // World units per second.
     float windX = 0.0f, windZ = 0.0f;
+
     // World height the cloud layers stay around (game Y, down is positive); without it they keep their offset from the camera.
     bool hasAltitude = false;
     float altitude = 0.0f;
     Color cloudTint;
+
+    // Flight area: how far in from the map's min X, max X, min Z and max Z edges the craft is turned back.
+    bool hasBounds = false;
+    float bounds[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 };
 
 inline Color parseColor(const nlohmann::json& v, const char* name, std::vector<std::string>& errors)
@@ -114,7 +124,86 @@ inline Environment parseEnvironment(const std::string& text, std::vector<std::st
         if (clouds.contains("tint")) env.cloudTint = parseColor(clouds["tint"], "cloud tint", errors);
     }
 
+    if (doc.contains("bounds"))
+    {
+        const auto& b = doc["bounds"];
+        const bool ok = b.is_array() && (b.size() == 4) && std::all_of(b.begin(), b.end(), [](const nlohmann::json& v) { return v.is_number() && (v.get<float>() >= 0.0f); });
+
+        if (ok)
+        {
+            env.hasBounds = true;
+
+            for (size_t i = 0; i < 4; i++) env.bounds[i] = b[i].get<float>();
+        }
+        else
+        {
+            errors.push_back("bounds is not [min X, max X, min Z, max Z] insets of 0 or more");
+        }
+    }
+
     return env;
+}
+
+// The mission sun's colour as load_level_hmp builds it: the lighting block (offset at +0x20) holds a count, then 0x20-byte light objects;
+// the first type-0 (+0x18) one without the optional flag (+0x1B) is the sun, its float colour (+0xC) normalized.
+inline bool hmpSunColor(const uint8_t* hmp, size_t size, float out[3])
+{
+
+    const auto be32 = [hmp](size_t o) { return ((uint32_t)hmp[o] << 24) | ((uint32_t)hmp[o + 1] << 16) | ((uint32_t)hmp[o + 2] << 8) | hmp[o + 3]; };
+
+    if (size < 0x24)
+    {
+        return false;
+    }
+
+    const size_t light = be32(0x20);
+
+    if (light + 0xC > size)
+    {
+        return false;
+    }
+
+    const uint32_t count = be32(light);
+
+    for (uint32_t i = 0; i < count; i++)
+    {
+        const size_t o = light + i * 0x20u;
+
+        if (o + 0x20 > size)
+        {
+            return false;
+        }
+
+        if (hmp[o + 0x18] != 0 || hmp[o + 0x1B] != 0)
+        {
+            continue;
+        }
+
+        float c[3];
+
+        for (int k = 0; k < 3; k++)
+        {
+            const uint32_t bits = be32(o + 0xC + k * 4);
+
+            std::memcpy(&c[k], &bits, 4);
+        }
+
+        const float len = std::sqrt(c[0] * c[0] + c[1] * c[1] + c[2] * c[2]);
+
+        if (!(len > 0.0f))
+        {
+            return false;
+        }
+
+        for (int k = 0; k < 3; k++)
+        {
+            out[k] = c[k] / len;
+        }
+
+        return true;
+    }
+
+    return false;
 }
 
 }

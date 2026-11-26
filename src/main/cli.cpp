@@ -110,8 +110,10 @@ struct CliFlag {
 };
 
 static const CliFlag kCliFlags[] = {
+    {"rom",              "ROGUESQ_ROM",              CliFlag::Value, "",  "",  "import the ROM at <path> (.z64, .n64 or .v64) when no valid ROM is stored yet"},
     {"gfx-api",          "ROGUESQ_GFX_API",          CliFlag::Value, "",  "",  "graphics API: vulkan | d3d12 | d3d11 | d3d10 (default auto)"},
     {"precompile-d3d11-shaders", "ROGUESQ_PRECOMPILE_D3D11", CliFlag::Value, "", "", "compile the D3D11 shaders for every combination in <list> into d3d11_shader_cache/ and exit (no ROM needed)"},
+    {"precompile-shaders", "ROGUESQ_PRECOMPILE_SHADERS", CliFlag::Bool, "1", "0", "compile every known shader for this GPU with the saved settings, keep them for later launches, then exit"},
     {"hle-dev-mode",     "ROGUESQ_HLE_DEV_MODE",     CliFlag::Bool,  "1", "0", "RT64 ImGui inspector on F1 (default on in Debug)"},
     {"f5-native",        "ROGUESQ_F5_NATIVE",        CliFlag::Bool,  "1", "0", "emit F5 geometry (default on); --no- parses without emitting"},
     {"audio-ucode",      "ROGUESQ_NO_AUDIO_UCODE",   CliFlag::Bool,  "0", "1", "MusyX synth (default); --no-audio-ucode uses the silent stub"},
@@ -126,10 +128,11 @@ static const CliFlag kCliFlags[] = {
     {"fullscreen",       "ROGUESQ_FULLSCREEN",       CliFlag::Bool,  "1", "0", "start in borderless fullscreen (Alt+Enter toggles)"},
     {"language",         "ROGUESQ_LANGUAGE",         CliFlag::Value, "",  "",  "game text language for this run: en | de | fr or a language mod's code (the saved setting is unchanged)"},
     {"window-size",     "ROGUESQ_WINDOW_SIZE",      CliFlag::Value, "",  "",  "initial window client size WxH (e.g. 1280x720)"},
-    {"widescreen",       "ROGUESQ_WIDESCREEN",       CliFlag::Bool,  "1", "0", "expand the aspect ratio to fill the window"},
+    {"hotkeys",          "ROGUESQ_HOTKEYS",          CliFlag::Bool,  "1", "0", "function-key shortcuts (default from roguesq_input.json); --no-hotkeys leaves those keys to the game bindings"},
+    {"widescreen",       "ROGUESQ_WIDESCREEN",      CliFlag::Bool,  "1", "0", "expand the aspect ratio to fill the window"},
     {"vr",               "ROGUESQ_VR",               CliFlag::Bool,  "1", "0", "play in a VR headset (OpenXR builds)"},
     {"preset",           "ROGUESQ_VIDEO_CONFIG",     CliFlag::Value, "",  "",  "display settings from a video preset (low | medium | high | ultra | original | vr) or a settings file; changes save there"},
-    {"draw-distance",    "ROGUESQ_DRAW_DIST",        CliFlag::Value, "",  "",  "draw distance multiplier (e.g. 1.3; terrain and fog capped at 2.5)"},
+    {"draw-distance",    "ROGUESQ_DRAW_DIST",        CliFlag::Value, "",  "",  "draw distance multiplier, 0.25-8 (e.g. 1.5; capped at 1.3 with legacy terrain)"},
     {"force-level",      "ROGUESQ_FORCE_LEVEL",      CliFlag::Value, "",  "",  "missions you launch from the menus are level N (0-18)"},
     {"force-craft",      "ROGUESQ_FORCE_CRAFT",      CliFlag::Value, "",  "",  "missions you launch from the menus use craft N (0-8)"},
 

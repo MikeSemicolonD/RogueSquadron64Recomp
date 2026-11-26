@@ -38,7 +38,7 @@
         {
             "name": "emissive_imp_shuttle_exhaust",
             "enabled": true,
-            "mesh": "imp_shuttle#s0.p0",
+            "mesh": "imp_shuttle|mshuttle|v_hls_hi|raptor",
             "emissive": true,
             "translucentOnly": true,
             "lights": []
@@ -182,9 +182,9 @@
                             0
                         ],
                         "diffuseColor": [
-                            3,
-                            2.4,
-                            1.05
+                            6,
+                            4.8,
+                            2.1
                         ],
                         "attenuationRadius": 1500,
                         "attenuationExponent": 2,

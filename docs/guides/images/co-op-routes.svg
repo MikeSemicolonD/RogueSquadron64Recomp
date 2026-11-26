@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="660" viewBox="0 0 900 660" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#3b4a5c"/>
+    </marker>
+    <style>
+      .pc { fill: #eef3fb; stroke: #5a7bb5; stroke-width: 1.5; }
+      .router { fill: #f4f4f4; stroke: #8a8a8a; stroke-width: 1.5; }
+      .open { fill: #e6f6ea; stroke: #2e9a4e; stroke-width: 2.5; }
+      .cloud { fill: #fbfbfb; stroke: #b0b0b0; stroke-width: 1.5; stroke-dasharray: 5 4; }
+      .link { stroke: #3b4a5c; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+      .label { fill: #1d2733; font-weight: 600; text-anchor: middle; }
+      .note { fill: #5c6670; text-anchor: middle; font-size: 12px; }
+      .ok { fill: #2e7d43; text-anchor: middle; font-size: 12px; font-weight: 600; }
+      .head { fill: #1d2733; font-size: 16px; font-weight: 700; }
+      .sub { fill: #5c6670; font-size: 13px; }
+      .rule { stroke: #e2e5e9; stroke-width: 1; }
+    </style>
+  </defs>
+
+  <rect width="900" height="660" fill="#ffffff"/>
+
+  <text x="30" y="32" class="head" font-size="19">There is no official server</text>
+  <text x="30" y="54" class="sub">Over the internet, one machine on the path must accept incoming connections (green). Arrows start at whoever connects.</text>
+
+  <!-- 1. Direct -->
+  <line x1="30" y1="72" x2="870" y2="72" class="rule"/>
+  <text x="30" y="96" class="head">1. Direct</text>
+  <text x="120" y="96" class="sub">The host's router lets the friend in. Free, but the host's router has to allow it.</text>
+
+  <rect x="30" y="120" width="120" height="56" rx="8" class="pc"/>
+  <text x="90" y="153" class="label">Host PC</text>
+  <rect x="200" y="120" width="120" height="56" rx="8" class="open"/>
+  <text x="260" y="153" class="label">Host router</text>
+  <ellipse cx="450" cy="148" rx="62" ry="30" class="cloud"/>
+  <text x="450" y="153" class="label">Internet</text>
+  <rect x="580" y="120" width="120" height="56" rx="8" class="router"/>
+  <text x="640" y="153" class="label">Friend router</text>
+  <rect x="750" y="120" width="120" height="56" rx="8" class="pc"/>
+  <text x="810" y="153" class="label">Friend PC</text>
+
+  <line x1="750" y1="148" x2="702" y2="148" class="link"/>
+  <line x1="580" y1="148" x2="514" y2="148" class="link"/>
+  <line x1="388" y1="148" x2="322" y2="148" class="link"/>
+  <line x1="200" y1="148" x2="152" y2="148" class="link"/>
+
+  <text x="90" y="196" class="note">HOST GAME</text>
+  <text x="260" y="196" class="ok">UDP 27064 open</text>
+  <text x="260" y="213" class="note">UPnP, or forward it by hand</text>
+  <text x="640" y="196" class="note">no setup</text>
+  <text x="810" y="196" class="note">types the host's</text>
+  <text x="810" y="213" class="note">NET address, JOIN GAME</text>
+
+  <!-- 2. Relay server -->
+  <line x1="30" y1="262" x2="870" y2="262" class="rule"/>
+  <text x="30" y="286" class="head">2. Relay server</text>
+  <text x="180" y="286" class="sub">Both players connect out to a server someone runs. Neither router needs setup.</text>
+
+  <rect x="30" y="310" width="120" height="56" rx="8" class="pc"/>
+  <text x="90" y="343" class="label">Host PC</text>
+  <rect x="200" y="310" width="120" height="56" rx="8" class="router"/>
+  <text x="260" y="343" class="label">Host router</text>
+  <rect x="380" y="306" width="140" height="64" rx="8" class="open"/>
+  <text x="450" y="335" class="label">Relay server</text>
+  <text x="450" y="353" class="note">rs64_relay</text>
+  <rect x="580" y="310" width="120" height="56" rx="8" class="router"/>
+  <text x="640" y="343" class="label">Friend router</text>
+  <rect x="750" y="310" width="120" height="56" rx="8" class="pc"/>
+  <text x="810" y="343" class="label">Friend PC</text>
+
+  <line x1="150" y1="338" x2="198" y2="338" class="link"/>
+  <line x1="320" y1="338" x2="378" y2="338" class="link"/>
+  <line x1="750" y1="338" x2="702" y2="338" class="link"/>
+  <line x1="580" y1="338" x2="522" y2="338" class="link"/>
+
+  <text x="90" y="386" class="note">server address in the</text>
+  <text x="90" y="403" class="note">address row, HOST GAME</text>
+  <text x="260" y="386" class="note">no setup</text>
+  <text x="450" y="390" class="ok">UDP 27070 open</text>
+  <text x="450" y="407" class="note">rented server, or a PC</text>
+  <text x="450" y="424" class="note">with the port forwarded</text>
+  <text x="640" y="386" class="note">no setup</text>
+  <text x="810" y="386" class="note">same address,</text>
+  <text x="810" y="403" class="note">JOIN GAME, pick the game</text>
+
+  <!-- 3. Steam or VPN -->
+  <line x1="30" y1="452" x2="870" y2="452" class="rule"/>
+  <text x="30" y="476" class="head">3. Steam or VPN</text>
+  <text x="185" y="476" class="sub">A service both players sign in to carries the traffic. Neither router needs setup.</text>
+
+  <rect x="30" y="500" width="120" height="56" rx="8" class="pc"/>
+  <text x="90" y="533" class="label">Host PC</text>
+  <rect x="200" y="500" width="120" height="56" rx="8" class="router"/>
+  <text x="260" y="533" class="label">Host router</text>
+  <rect x="380" y="496" width="140" height="64" rx="8" class="open"/>
+  <text x="450" y="525" class="label">Steam or VPN</text>
+  <text x="450" y="543" class="note">network</text>
+  <rect x="580" y="500" width="120" height="56" rx="8" class="router"/>
+  <text x="640" y="533" class="label">Friend router</text>
+  <rect x="750" y="500" width="120" height="56" rx="8" class="pc"/>
+  <text x="810" y="533" class="label">Friend PC</text>
+
+  <line x1="150" y1="528" x2="198" y2="528" class="link"/>
+  <line x1="320" y1="528" x2="378" y2="528" class="link"/>
+  <line x1="750" y1="528" x2="702" y2="528" class="link"/>
+  <line x1="580" y1="528" x2="522" y2="528" class="link"/>
+
+  <text x="90" y="576" class="note">HOST GAME</text>
+  <text x="260" y="576" class="note">no setup</text>
+  <text x="450" y="580" class="note">Steam relay mod on, or</text>
+  <text x="450" y="597" class="note">Tailscale, ZeroTier, Hamachi</text>
+  <text x="640" y="576" class="note">no setup</text>
+  <text x="810" y="576" class="note">JOIN GAME</text>
+
+  <text x="30" y="640" class="sub">On the same home network none of this applies: JOIN GAME finds the host by itself.</text>
+</svg>

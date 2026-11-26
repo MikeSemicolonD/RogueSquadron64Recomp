@@ -40,5 +40,51 @@ int main()
     parseEnvironment("not json", errors);
     CHECK(errors.size() == 1);
 
+    errors.clear();
+
+    const Environment bounded = parseEnvironment(R"({ "bounds": [0, 30, 12.5, 4] })", errors);
+
+    CHECK(errors.empty());
+    CHECK(bounded.hasBounds && bounded.bounds[1] == 30.0f && bounded.bounds[2] == 12.5f);
+    CHECK(!empty.hasBounds);
+
+    parseEnvironment(R"({ "bounds": [1, 2, 3] })", errors);
+    parseEnvironment(R"({ "bounds": [1, -2, 3, 4] })", errors);
+    CHECK(errors.size() == 2);
+
+    // hmp lighting block at 0x30: a point light, a flagged sun, then the sun (Construction Yards' colour, its mission sun normalized).
+    std::vector<uint8_t> hmp(0x30 + 0xC + 3 * 0x20, 0);
+
+    const auto put32 = [&hmp](size_t o, uint32_t v) {
+
+        for (int k = 0; k < 4; k++)
+        {
+            hmp[o + k] = (uint8_t)(v >> (24 - 8 * k));
+        }
+    };
+
+    const auto putf = [&put32](size_t o, float f) {
+        uint32_t bits;
+
+        std::memcpy(&bits, &f, 4);
+        put32(o, bits);
+    };
+
+    put32(0x20, 0x30);
+    put32(0x30, 3);
+    hmp[0x30 + 0x18] = 1;
+    hmp[0x50 + 0x1B] = 1;
+    putf(0x50 + 0xC, 255.0f);
+    putf(0x70 + 0xC, 210.0f);
+    putf(0x70 + 0x10, 125.0f);
+    putf(0x70 + 0x14, 73.0f);
+
+    float sun[3];
+
+    CHECK(hmpSunColor(hmp.data(), hmp.size(), sun));
+    CHECK(std::fabs(sun[0] - 0.8236f) < 0.002f && std::fabs(sun[1] - 0.4898f) < 0.002f && std::fabs(sun[2] - 0.2861f) < 0.002f);
+    CHECK(!hmpSunColor(hmp.data(), 0x80, sun));
+    CHECK(!hmpSunColor(nullptr, 0, sun));
+
     return 0;
 }

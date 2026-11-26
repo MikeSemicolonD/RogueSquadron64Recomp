@@ -130,7 +130,11 @@ void apply_upscale_choice(RT64::UserConfiguration& uc, int choice);
 
 // Renderer side, once per present: copies pending menu changes into uc (and otherwise mirrors uc for the menu). msaa = call updateMultisampling; discard_fbs = updateUserConfig(true).
 struct ApplyResult { bool changed = false; bool discard_fbs = false; bool msaa = false; };
-ApplyResult apply_pending(RT64::UserConfiguration& uc);
+// demo: an attract demo is playing. Its logic is held at 30 fps, so with interpolation off uc interpolates it up to TARGET FPS while the menu and save keep "off".
+ApplyResult apply_pending(RT64::UserConfiguration& uc, bool demo = false);
+
+// apply_pending turned interpolation on for a demo, so uc's refresh rate is not the saved one.
+bool demo_interpolating();
 
 // Refresh rates the window's display supports (ascending, distinct), for TARGET FPS.
 void set_refresh_rates(std::vector<int> hz);

@@ -146,6 +146,12 @@ static void test_hello_roundtrip() {
     char got[3] = {};
     CHECK(message_type(nb.data(), nb.size()) == (uint8_t)Msg::Name && decode_name(nb.data(), nb.size(), got) && memcmp(got, "WED", 3) == 0);
     CHECK(!decode_name(nb.data(), nb.size() - 1, got));
+    const std::vector<uint8_t> sb = encode_ship("red_wing");
+    std::string ship;
+    CHECK(message_type(sb.data(), sb.size()) == (uint8_t)Msg::Ship && decode_ship(sb.data(), sb.size(), &ship) && ship == "red_wing");
+    CHECK(!decode_ship(sb.data(), sb.size() - 1, &ship));
+    const std::vector<uint8_t> stock = encode_ship("");
+    CHECK(decode_ship(stock.data(), stock.size(), &ship) && ship.empty());
     // A peer on another protocol still reads as a HELLO, so the lobby can say VERSION MISMATCH.
     std::vector<uint8_t> other = encode_hello(Hello{(uint16_t)(kProtocol + 1), 7u, 0});
     other[0] = (uint8_t)(kProtocol + 1);

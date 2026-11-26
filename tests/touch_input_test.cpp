@@ -6,6 +6,7 @@
 #include "input/touch_input.h"
 #include "input/touch_menu.h"
 #include "input/touch_config.h"
+#include "game/menus/menu_layout.h"
 #include <string>
 
 using namespace rs64::touch;
@@ -842,8 +843,8 @@ static void setup_menu(uint8_t count, uint8_t current, uint16_t active) {
     for (int i = 0; i < count; ++i) {
         wstr(0x80300000 + i * 0x40, labels[i]);
         ww(G + 0x08 + 4 * i, 0x80300000 + i * 0x40);
-        wh(G + 0x30 + 4 * i, 0);
-        wh(G + 0x32 + 4 * i, 0);
+        wh(G + rs64::menu::kRowPos + 4 * i, 0);
+        wh(G + rs64::menu::kRowPos + 2 + 4 * i, 0);
         float one = 1.0f;
         uint32_t bits;
         std::memcpy(&bits, &one, 4);
@@ -943,8 +944,8 @@ static void test_main_menu_calibration() {
     setup_menu(2, 0, 0x03);
     wb(0x800CE730 + 0x04, 0);
     wh(0x800CE730 + 0x96, 165);
-    wh(0x800CE730 + 0x30, -156);
-    wh(0x800CE730 + 0x34, -143);
+    wh(0x800CE730 + rs64::menu::kRowPos, -156);
+    wh(0x800CE730 + rs64::menu::kRowPos + 4, -143);
     MenuSnapshot s{};
     std::vector<Box> bx;
     CHECK(read_menu(g_ram.data(), &s, &bx, 2340, 1080));
@@ -957,7 +958,7 @@ static void test_controller_settings_back() {
     setup_menu(1, 0, 0x01);
     wb(0x800CE730 + 0x04, 5);
     wh(0x800CE730 + 0x96, -90);
-    wh(0x800CE730 + 0x32, 283);
+    wh(0x800CE730 + rs64::menu::kRowPos + 2, 283);
     MenuSnapshot s{};
     std::vector<Box> bx;
     CHECK(read_menu(g_ram.data(), &s, &bx, 2340, 1080));
@@ -998,21 +999,23 @@ static void test_craft_select_taps() {
 }
 
 // Front-end screen u16 @0x800CFF50 (menu overlay main loop): 2 = menu tree, 1 = SELECT LEVEL, 0 = SELECT YOUR CRAFT.
-// SELECT GAME is the menu tree with menu id 1 and entry 0 typed as a save slot (type byte 0x800CE758 == 3).
+// SELECT GAME is the menu tree with menu id 1 and entry 0 typed as a save slot (type byte 3).
 static void test_account_screen() {
+    const uint32_t type0 = 0x800CE730 + rs64::menu::kRowType;
+
     setup_menu(4, 0, 0x0F);
     wb(0x800CE730 + 0x04, 1);
-    wb(0x800CE758, 3);
+    wb(type0, 3);
     wh(0x800CFF50, 2);
     CHECK(account_screen(g_ram.data()) == AccountScreen::SelectGame);
-    wb(0x800CE758, 0);
+    wb(type0, 0);
     CHECK(account_screen(g_ram.data()) == AccountScreen::NotAccount);   // ENTER NAME / erase confirm: normal list handling
     wh(0x800CFF50, 1);
     CHECK(account_screen(g_ram.data()) == AccountScreen::Levels);
     wh(0x800CFF50, 0);
     CHECK(account_screen(g_ram.data()) == AccountScreen::Craft);
     wh(0x800CFF50, 2);
-    wb(0x800CE758, 3);
+    wb(type0, 3);
     wb(0x800CE730 + 0x04, 2);
     CHECK(account_screen(g_ram.data()) == AccountScreen::NotAccount);
 }
@@ -1030,7 +1033,7 @@ static void test_level_select_arrows() {
 static void test_sound_slider_bar() {
     setup_menu(4, 1, 0x0F);
     wb(0x800CE730 + 0x04, 6);
-    wb(0x800CE730 + 0x28 + 1, 22);
+    wb(0x800CE730 + rs64::menu::kRowType + 1, 22);
     SliderBar bar{};
     CHECK(!sound_slider(g_ram.data(), 0, 2340, 1080, &bar));
     CHECK(sound_slider(g_ram.data(), 1, 2340, 1080, &bar));
@@ -1044,6 +1047,14 @@ static void test_sound_slider_bar() {
     CHECK(std::abs(slider_value_at(bar, (lx + rx) / 2) - 64) <= 1);
     CHECK(slider_value_at(bar, lx - 0.05f) == 0);
     CHECK(bar.y0 < my && my < bar.y1);
+
+    // A mod page can fill all 12 rows (DRAW DISTANCE on Display Settings) and still has its bar.
+    wb(0x800CE730 + 0x95, rs64::menu::kMenuRows);
+    CHECK(sound_slider(g_ram.data(), 1, 2340, 1080, &bar));
+    wb(0x800CE730 + 0x95, rs64::menu::kMenuRows + 1);
+    CHECK(!sound_slider(g_ram.data(), 1, 2340, 1080, &bar));
+    wb(0x800CE730 + 0x95, 4);
+
     write_volume(g_ram.data(), 1, 77);
     CHECK(read_volume(g_ram.data(), 1) == 77);
     CHECK(g_ram[(0x80130B61 - 0x80000000) ^ 3] == 77);
@@ -1316,8 +1327,8 @@ static void test_classify() {
     CHECK(classify(1, "menu.biographies", false, false) == Context::ListMenu);
     CHECK(classify(1, "menu.elite_rogues", false, false) == Context::ListMenu);
     CHECK(classify(1, "menu.passcodes", false, false) == Context::Wheel);
-    CHECK(classify(1, "menu.media", false, false) == Context::ListMenu);
-    CHECK(classify(1, "menu.account.level_select", false, false) == Context::Carousel);
+    CHECK(classify(1, "menu.showroom", false, false) == Context::ListMenu);
+    CHECK(classify(1, "menu.level_select", false, false) == Context::Carousel);
     CHECK(classify(1, "mission", false, false) == Context::Carousel);
     CHECK(classify(0, "mission", false, false) == Context::Flight);
     CHECK(classify(0, "mission", true, false) == Context::PauseMenu);
@@ -1325,6 +1336,7 @@ static void test_classify() {
     CHECK(classify(2, "cinematic", false, false) == Context::Cutscene);
     CHECK(classify(-1, "unknown", false, false) == Context::Cutscene);
     CHECK(classify(1, nullptr, false, false) == Context::Carousel);
+    CHECK(classify(1, "attribution", false, false) == Context::Cutscene);
 }
 
 static void test_config_roundtrip() {

@@ -447,7 +447,7 @@ before_vram = 0x8001A2EC
 text = '{ rs64_th_initVideoSubsystem_8001A2EC(rdram, ctx); }'
 
 # Positional HOTAS throttle: each craft's speed update, just before current speed steps toward the clamped target.
-# rs64_throttle_hook(rdram, target, base_addr, floor, cruise, cap, skip_addr) maps the lever onto that craft's floor/cruise/cap.
+# rs64_throttle_hook(rdram, target, speed_addr, base_addr, floor, cruise, cap, skip_addr, cruise_ratio, brake_ratio) maps the lever onto that craft's own brake/cruise/cap speeds and sets the DualSense trigger resistance from the current speed.
 [[patches.hook]]
 func = "updateXwingFlightControls"   # X-wing speed update (misnamed); 0x4($s2) != 0 is a scripted full-speed boost
 before_vram = 0x800B48EC
@@ -919,6 +919,12 @@ func = "cinematicSplineWalkerNpcHandler"
 before_vram = 0x8005C2F0
 text = '{ rs64_th_cinematicSplineWalkerNpcHandler_8005C2F0(rdram, ctx); }'
 
+# Flight area per side from a level's environment.json, where every path of the function has set the stock bounds.
+[[patches.hook]]
+func = "loadPlayerStartPosition"
+before_vram = 0x800B0060
+text = '{ rs64_th_loadPlayerStartPosition_800B0060(rdram, ctx); }'
+
 # Cloud sheet update: wind and a fixed altitude from a level's environment.json.
 [[patches.hook]]
 func = "updateWalkerParticlePositions"
@@ -947,7 +953,7 @@ func = "streamTerrainGridCellsByDistance"
 before_vram = 0x80042DDC
 text = '{ rs64_th_streamTerrainGridCellsByDistance_80042DDC(rdram, ctx); }'
 
-# After binPolygonIntoTerrainGrid: VR opens each binned cell's altitude band (rs64_vr_terrain_heights), then the terrain grid probe (ROGUESQ_LOG_TERRAIN_GRID).
+# After binPolygonIntoTerrainGrid: every binned cell gets the full altitude band (rs64_terrain_full_band), then the terrain grid probe (ROGUESQ_LOG_TERRAIN_GRID).
 [[patches.hook]]
 func = "buildVisibleTerrainGridAroundCamera"
 before_vram = 0x80043A8C
@@ -988,6 +994,11 @@ text = '{ rs64_th_buildVisibleTerrainGridAroundCamera_8004395C(rdram, ctx); }'
 func = "projectModelBoundsToScreen"
 before_vram = 0x80065FE4
 text = '{ rs64_th_projectModelBoundsToScreen_80065FE4(rdram, ctx); }'
+
+# A mod's camera_shots.txt replace line swaps the camera the mission script cuts to.
+[[patches.hook]]
+func = "setHudFlagBit40AndStoreArg"
+text = '{ if (rs64_th_setHudFlagBit40AndStoreArg_entry(rdram, ctx)) return; }'
 
 # VR: the head can face any way, so every hangar piece is drawn.
 [[patches.hook]]
@@ -1148,6 +1159,17 @@ func = "menuControllerInput"
 before_vram = 0x800B793C
 text = '{ rs64_th_menuControllerInput_800B793C(rdram, ctx); }'
 
+# SELECT GAME's spinning insignia (menu overlay, misnamed): each frame adds a fixed step and an eased step to the spin angle (+0x44).
+[[patches.hook]]
+func = "playerVwingMainUpdate"
+before_vram = 0x800BA018
+text = '{ rs64_th_playerVwingMainUpdate_800BA018(rdram, ctx); }'
+
+[[patches.hook]]
+func = "playerVwingMainUpdate"
+before_vram = 0x800BA04C
+text = '{ rs64_th_playerVwingMainUpdate_800BA04C(rdram, ctx); }'
+
 # The craft-select bay moves between points with speeds that step toward their target by 0.004 / 0.007 per frame.
 [[patches.hook]]
 func = "updateHangarBayScene"
@@ -1219,11 +1241,32 @@ func = "shutdownMusyXVoices"
 before_vram = 0x8009BCEC
 text = '{ rs64_th_shutdownMusyXVoices_8009BCEC(rdram, ctx); }'
 
+# Mission frames clear the whole screen instead of the camera's clear list: the list skips areas the game expects its sky to cover, and during a fast roll a
+# strip of it is left uncovered, which on the N64 still holds the previous frame but under RT64 shows the render target's stale contents.
+[[patches.hook]]
+func = "setActiveRenderListPtr"
+text = '{ rs64_th_setActiveRenderListPtr_entry(rdram, ctx); }'
+
 # (2) The game frees DL chunks before waiting for SP-done, but RT64's parse may
 #     still be reading them. Wait for the in-flight parse first.
 [[patches.hook]]
 func = "reclaimDisplayListChunk"
 text = '{ rs64_th_reclaimDisplayListChunk_entry(rdram, ctx); }'
+[[patches.hook]]
+func = "checkAndReturnByteFlagAsU8"
+text = '{ rs64_th_checkAndReturnByteFlagAsU8_entry(rdram, ctx); }'
+[[patches.hook]]
+func = "advanceNpcOnCurvedPath"
+before_vram = 0x8006C010
+text = '{ rs64_th_advanceNpcOnCurvedPath_8006C010(rdram, ctx); }'
+[[patches.hook]]
+func = "advanceNpcOnCurvedPath"
+before_vram = 0x8006C018
+text = '{ rs64_th_advanceNpcOnCurvedPath_8006C018(rdram, ctx); }'
+[[patches.hook]]
+func = "checkAndReturnByteFlagAsU8"
+before_vram = 0x80059424
+text = '{ rs64_th_checkAndReturnByteFlagAsU8_80059424(rdram, ctx); }'
 [[patches.hook]]
 func = "drainMeshReleaseQueue"
 text = '{ rs64_th_drainMeshReleaseQueue_entry(rdram, ctx); }'
@@ -1424,6 +1467,218 @@ value = 0x3C0780B6
 func = "drawSubtitleText"
 vram = 0x80015AC4
 value = 0x24E70000
+
+# Per-frame draw queue: 512 12-byte entries at 0x80116400 with no bound check, and the camera index at 0x80117C00 sits right after it (a long tow cable round an AT-AT overflows it and the next draw faults). Moved to host RAM with room for 2048.
+[[patches.instruction]]
+func = "beginFrameDLChunk"
+vram = 0x8000AB44
+value = 0x3C0180B2
+
+[[patches.instruction]]
+func = "beginFrameDLChunk"
+vram = 0x8000AB4C
+value = 0x8C221000
+
+[[patches.instruction]]
+func = "beginFrameDLChunk"
+vram = 0x8000AD00
+value = 0x3C0180B2
+
+[[patches.instruction]]
+func = "beginFrameDLChunk"
+vram = 0x8000AD08
+value = 0x8C221004
+
+[[patches.instruction]]
+func = "beginFrameDLChunk"
+vram = 0x8000AE28
+value = 0x3C0180B2
+
+[[patches.instruction]]
+func = "beginFrameDLChunk"
+vram = 0x8000AE30
+value = 0x8C241004
+
+[[patches.instruction]]
+func = "beginFrameDLChunk"
+vram = 0x8000AF50
+value = 0x3C0180B2
+
+[[patches.instruction]]
+func = "beginFrameDLChunk"
+vram = 0x8000AF58
+value = 0x8C231000
+
+[[patches.instruction]]
+func = "submitSceneNodeRender"
+vram = 0x8001024C
+value = 0x3C0180B2
+
+[[patches.instruction]]
+func = "submitSceneNodeRender"
+vram = 0x80010254
+value = 0xAC251000
+
+[[patches.instruction]]
+func = "submitSceneNodeRender"
+vram = 0x80010258
+value = 0x3C0180B2
+
+[[patches.instruction]]
+func = "submitSceneNodeRender"
+vram = 0x80010260
+value = 0xAC241004
+
+[[patches.instruction]]
+func = "submitSceneNodeRender"
+vram = 0x8001026C
+value = 0x3C0180B2
+
+[[patches.instruction]]
+func = "submitSceneNodeRender"
+vram = 0x80010274
+value = 0xAC341008
+
+[[patches.instruction]]
+func = "renderFlatMeshFaceGroup"
+vram = 0x80011288
+value = 0x3C0180B2
+
+[[patches.instruction]]
+func = "renderFlatMeshFaceGroup"
+vram = 0x80011290
+value = 0xAC241000
+
+[[patches.instruction]]
+func = "renderFlatMeshFaceGroup"
+vram = 0x80011294
+value = 0x3C0180B2
+
+[[patches.instruction]]
+func = "renderFlatMeshFaceGroup"
+vram = 0x8001129C
+value = 0xAC281004
+
+[[patches.instruction]]
+func = "renderFlatMeshFaceGroup"
+vram = 0x800112A8
+value = 0x3C0180B2
+
+[[patches.instruction]]
+func = "renderFlatMeshFaceGroup"
+vram = 0x800112B0
+value = 0xAC311008
+
+[[patches.instruction]]
+func = "renderLitMeshFaceGroup"
+vram = 0x80013238
+value = 0x3C0180B2
+
+[[patches.instruction]]
+func = "renderLitMeshFaceGroup"
+vram = 0x80013240
+value = 0xAC241000
+
+[[patches.instruction]]
+func = "renderLitMeshFaceGroup"
+vram = 0x80013244
+value = 0x3C0180B2
+
+[[patches.instruction]]
+func = "renderLitMeshFaceGroup"
+vram = 0x8001324C
+value = 0xAC281004
+
+[[patches.instruction]]
+func = "renderLitMeshFaceGroup"
+vram = 0x80013258
+value = 0x3C0180B2
+
+[[patches.instruction]]
+func = "renderLitMeshFaceGroup"
+vram = 0x80013260
+value = 0xAC361008
+
+[[patches.instruction]]
+func = "processSceneNode"
+vram = 0x80015014
+value = 0x3C0180B2
+
+[[patches.instruction]]
+func = "processSceneNode"
+vram = 0x8001501C
+value = 0xAC251000
+
+[[patches.instruction]]
+func = "processSceneNode"
+vram = 0x80015020
+value = 0x3C0180B2
+
+[[patches.instruction]]
+func = "processSceneNode"
+vram = 0x80015028
+value = 0xAC241004
+
+[[patches.instruction]]
+func = "processSceneNode"
+vram = 0x80015034
+value = 0x3C0180B2
+
+[[patches.instruction]]
+func = "processSceneNode"
+vram = 0x8001503C
+value = 0xAC311008
+
+[[patches.instruction]]
+func = "setupCameraMatrices"
+vram = 0x80016FAC
+value = 0x3C0180B2
+
+[[patches.instruction]]
+func = "setupCameraMatrices"
+vram = 0x80016FB4
+value = 0xAC271000
+
+[[patches.instruction]]
+func = "setupCameraMatrices"
+vram = 0x80016FB8
+value = 0x3C0180B2
+
+[[patches.instruction]]
+func = "setupCameraMatrices"
+vram = 0x80016FC0
+value = 0xAC201004
+
+[[patches.instruction]]
+func = "setupCameraMatrices"
+vram = 0x80016FC4
+value = 0x3C0180B2
+
+[[patches.instruction]]
+func = "setupCameraMatrices"
+vram = 0x80016FCC
+value = 0xAC201008
+
+# Per-frame scene node list: 518 entries at 0x8010E090 with no bound check, and the face stamp buffer pointers at 0x8010E8A8/AC sit right after it (a long tow cable overflows it and the stamps then land in the next heap block). Moved to host RAM with room for 4096.
+[[patches.instruction]]
+func = "processSceneNode"
+vram = 0x80015148
+value = 0x3C0180B2
+
+[[patches.instruction]]
+func = "processSceneNode"
+vram = 0x80015150
+value = 0xAC307000
+
+[[patches.instruction]]
+func = "submitGfxFrame"
+vram = 0x8000C0E4
+value = 0x3C1180B2
+
+[[patches.instruction]]
+func = "submitGfxFrame"
+vram = 0x8000C0E8
+value = 0x26317000
 
 [[patches.hook]]
 func = "buildAndRegisterDefaultMaterial"
@@ -2040,6 +2295,492 @@ func = "runHangarSelectionFrame"
 before_vram = 0x800AADD8
 text = '{ if (rs64_th_runHangarSelectionFrame_800AADD8(rdram, ctx)) return; }'
 
+# Custom hangar ships (ships.json, hangar_ships.cpp): each ship's bay follows the stock eight as hangar object 9+, its camera stop
+# follows the stock seven as stop 8+, and confirming it flies the template craft. Inert when no enabled mod lists a ship.
+[[patches.hook]]
+func = "hangarInitialize"
+text = '{ rs64_th_hangarInitialize_entry(rdram, ctx); }'
+
+[[patches.hook]]
+func = "hangarInitialize"
+before_vram = 0x800A98C4
+text = '{ rs64_th_hangarInitialize_800A98C4(rdram, ctx); }'
+
+[[patches.hook]]
+func = "hangarInitialize"
+before_vram = 0x800AA1CC
+text = '{ rs64_th_hangarInitialize_800AA1CC(rdram, ctx); }'
+
+[[patches.hook]]
+func = "hangarInitialize"
+before_vram = 0x800AAB58
+text = '{ rs64_th_hangarInitialize_800AAB58(rdram, ctx); }'
+
+[[patches.hook]]
+func = "hangarInitialize"
+before_vram = 0x800AAC08
+text = '{ rs64_th_hangarInitialize_800AAC08(rdram, ctx); }'
+
+[[patches.hook]]
+func = "hangarInitialize"
+before_vram = 0x800AAC10
+text = '{ rs64_th_hangarInitialize_800AAC10(rdram, ctx); }'
+
+[[patches.hook]]
+func = "dispatchOverlaySetupByParentAssetName"
+before_vram = 0x80053D30
+text = '{ rs64_th_dispatchOverlaySetupByParentAssetName_80053D30(rdram, ctx); }'
+
+[[patches.hook]]
+func = "hangarInitialize"
+before_vram = 0x800AABE4
+text = '{ rs64_th_hangarInitialize_800AABE4(rdram, ctx); }'
+
+[[patches.hook]]
+func = "hangarInitialize"
+before_vram = 0x800AABFC
+text = '{ rs64_th_hangarInitialize_800AABFC(rdram, ctx); }'
+
+[[patches.hook]]
+func = "allocateAndInitCraftNpcContext"
+before_vram = 0x8006BD7C
+text = '{ rs64_th_allocateAndInitCraftNpcContext_8006BD7C(rdram, ctx); }'
+
+[[patches.hook]]
+func = "playerSnowSpeederUpdate"
+before_vram = 0x800AD068
+text = '{ rs64_th_player_craft_context(rdram, ctx); }'
+
+[[patches.hook]]
+func = "playerXwingUpdate"
+before_vram = 0x800B55DC
+text = '{ rs64_th_player_craft_context(rdram, ctx); }'
+
+[[patches.hook]]
+func = "playerAwingUpdate"
+before_vram = 0x800B7310
+text = '{ rs64_th_player_craft_context(rdram, ctx); }'
+
+[[patches.hook]]
+func = "playerYwingUpdate"
+before_vram = 0x800B8648
+text = '{ rs64_th_player_craft_context(rdram, ctx); }'
+
+[[patches.hook]]
+func = "playerVwingUpdate"
+before_vram = 0x800BA128
+text = '{ rs64_th_player_craft_context(rdram, ctx); }'
+
+[[patches.hook]]
+func = "playerFalconUpdate"
+before_vram = 0x800BB9D8
+text = '{ rs64_th_player_craft_context(rdram, ctx); }'
+
+[[patches.hook]]
+func = "playerTieInterceptorUpdate"
+before_vram = 0x800BC9B8
+text = '{ rs64_th_player_craft_context(rdram, ctx); }'
+
+[[patches.hook]]
+func = "playerT16Update"
+before_vram = 0x800BD6D8
+text = '{ rs64_th_player_craft_context(rdram, ctx); }'
+
+[[patches.hook]]
+func = "playerNabooStarfighterUpdate"
+before_vram = 0x800BE97C
+text = '{ rs64_th_player_craft_context(rdram, ctx); }'
+
+[[patches.hook]]
+func = "bridgeLoadShipBlueprints"
+before_vram = 0x800B1714
+text = '{ rs64_th_bridgeLoadShipBlueprints_800B1714(rdram, ctx); }'
+
+[[patches.hook]]
+func = "bridgeLoadShipBlueprints"
+before_vram = 0x800B17D4
+text = '{ rs64_th_bridgeLoadShipBlueprints_800B17D4(rdram, ctx); }'
+
+[[patches.hook]]
+func = "layoutMenuTextRow"
+before_vram = 0x800B1858
+text = '{ rs64_th_layoutMenuTextRow_800B1858(rdram, ctx); }'
+
+[[patches.hook]]
+func = "layoutMenuTextRow"
+before_vram = 0x800B187C
+text = '{ rs64_th_layoutMenuTextRow_800B187C(rdram, ctx); }'
+
+[[patches.hook]]
+func = "layoutMenuTextRow"
+before_vram = 0x800B19B4
+text = '{ rs64_th_layoutMenuTextRow_800B19B4(rdram, ctx); }'
+
+[[patches.hook]]
+func = "runScriptedCraftCinematicEvent"
+before_vram = 0x800B1204
+text = '{ rs64_th_runScriptedCraftCinematicEvent_800B1204(rdram, ctx); }'
+
+[[patches.hook]]
+func = "runScriptedCraftCinematicEvent"
+before_vram = 0x800B12E0
+text = '{ rs64_th_runScriptedCraftCinematicEvent_800B12E0(rdram, ctx); }'
+
+[[patches.hook]]
+func = "walkMeshdef0List"
+text = '{ rs64_th_walkMeshdef0List_entry(rdram, ctx); }'
+
+[[patches.hook]]
+func = "composeNpcOrientationMatrix"
+before_vram = 0x800AB238
+text = '{ rs64_th_composeNpcOrientationMatrix_800AB238(rdram, ctx); }'
+
+[[patches.hook]]
+func = "composeNpcOrientationMatrix"
+before_vram = 0x800AB278
+text = '{ rs64_th_composeNpcOrientationMatrix_800AB278(rdram, ctx); }'
+
+[[patches.hook]]
+func = "composeNpcOrientationMatrix"
+before_vram = 0x800AB314
+text = '{ rs64_th_composeNpcOrientationMatrix_800AB314(rdram, ctx); }'
+
+[[patches.hook]]
+func = "composeNpcOrientationMatrix"
+before_vram = 0x800AB338
+text = '{ rs64_th_composeNpcOrientationMatrix_800AB338(rdram, ctx); }'
+
+[[patches.hook]]
+func = "composeNpcOrientationMatrix"
+before_vram = 0x800AB468
+text = '{ rs64_th_composeNpcOrientationMatrix_800AB468(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateHangarBayScene"
+before_vram = 0x800AC274
+text = '{ rs64_th_updateHangarBayScene_800AC274(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateHangarBayScene"
+before_vram = 0x800AC304
+text = '{ rs64_th_updateHangarBayScene_800AC304(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateHangarBayScene"
+before_vram = 0x800AC390
+text = '{ rs64_th_updateHangarBayScene_800AC390(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateHangarBayScene"
+before_vram = 0x800ABC84
+text = '{ rs64_th_updateHangarBayScene_800ABC84(rdram, ctx); }'
+
+[[patches.hook]]
+func = "hangarInitialize"
+before_vram = 0x800AA9A8
+text = '{ rs64_th_hangarInitialize_800AA9A8(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateHangarBayScene"
+before_vram = 0x800ABE4C
+text = '{ rs64_th_updateHangarBayScene_800ABE4C(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateHangarBayScene"
+before_vram = 0x800ACA04
+text = '{ rs64_th_updateHangarBayScene_800ACA04(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateHangarBayScene"
+before_vram = 0x800ACA30
+text = '{ rs64_th_updateHangarBayScene_800ACA30(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateHangarBayScene"
+before_vram = 0x800ACEC0
+text = '{ rs64_th_updateHangarBayScene_800ACEC0(rdram, ctx); }'
+
+[[patches.hook]]
+func = "craftSelectionVoiceLineHelper"
+before_vram = 0x800AE3A4
+text = '{ rs64_th_craftSelectionVoiceLineHelper_800AE3A4(rdram, ctx); }'
+
+[[patches.hook]]
+func = "npcWingmanUpdate"
+before_vram = 0x800D94A4
+text = '{ rs64_th_npcWingmanUpdate_800D94A4(rdram, ctx); }'
+
+# Each player craft's gun aim: its call to the shared lock-on search (a3 = range, 0x10($sp) = cone cosine). A ship's "aim" behaviour widens it.
+[[patches.hook]]
+func = "playXwingEngineSound"
+before_vram = 0x800B53DC
+text = '{ rs64_th_player_craft_aim(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateEngineThrustEffect"
+before_vram = 0x800B6CC4
+text = '{ rs64_th_player_craft_aim(rdram, ctx); }'
+
+[[patches.hook]]
+func = "orientEffectToVelocity"
+before_vram = 0x800B7AB4
+text = '{ rs64_th_player_craft_aim(rdram, ctx); }'
+
+[[patches.hook]]
+func = "tickVwingEngineAudio"
+before_vram = 0x800B9EF4
+text = '{ rs64_th_player_craft_aim(rdram, ctx); }'
+
+[[patches.hook]]
+func = "tickCinematicEffectObject"
+before_vram = 0x800ACD48
+text = '{ rs64_th_player_craft_aim(rdram, ctx); }'
+
+[[patches.hook]]
+func = "playerFalconMainUpdate"
+before_vram = 0x800BAE84
+text = '{ rs64_th_player_craft_aim(rdram, ctx); }'
+
+[[patches.hook]]
+func = "tickPlayerCraftBlinkIndicator"
+before_vram = 0x800BE778
+text = '{ rs64_th_player_craft_aim(rdram, ctx); }'
+
+# Cutscene actors' engine sound (flag bit 2 at actor+3, then a switch on the type at actor+2) and S-foil animation (type 2): the ship's
+# actor reads as its template there (v1 / a3 / v0 = the actor, v0 / v1 / s1 = the value just loaded).
+[[patches.hook]]
+func = "emit3DSoundsForActiveNpcs"
+before_vram = 0x800A9DF8
+text = '{ rs64_th_emit3DSoundsForActiveNpcs_800A9DF8(rdram, ctx); }'
+
+[[patches.hook]]
+func = "emit3DSoundsForActiveNpcs"
+before_vram = 0x800A9E14
+text = '{ rs64_th_emit3DSoundsForActiveNpcs_800A9E14(rdram, ctx); }'
+
+[[patches.hook]]
+func = "applyCutsceneSlotMaterialOverrides"
+before_vram = 0x800AA588
+text = '{ rs64_th_applyCutsceneSlotMaterialOverrides_800AA588(rdram, ctx); }'
+
+[[patches.hook]]
+func = "tickCutsceneActionSlots"
+before_vram = 0x800AA6F8
+text = '{ rs64_th_tickCutsceneActionSlots_800AA6F8(rdram, ctx); }'
+
+# A ship's boost and S-foils on another craft, before the shared physics step reads the flight record's speed.
+[[patches.hook]]
+func = "updatePlayerCraftPhysics"
+text = '{ rs64_th_updatePlayerCraftPhysics_entry(rdram, ctx); }'
+
+# The X-wing's S-foil button test (v0 = the special button's mask), off for a ship without "sfoils".
+[[patches.hook]]
+func = "updateXwingFlightControls"
+before_vram = 0x800B499C
+text = '{ rs64_th_updateXwingFlightControls_800B499C(rdram, ctx); }'
+
+# The V-wing's own boost button tests (v0 = the special button's mask), off for a ship without "boost".
+[[patches.hook]]
+func = "updateVwingFlightControls"
+before_vram = 0x800B90B0
+text = '{ rs64_th_vwing_boost_gate(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateVwingFlightControls"
+before_vram = 0x800B9118
+text = '{ rs64_th_vwing_boost_gate(rdram, ctx); }'
+
+[[patches.hook]]
+func = "initSceneForMission"
+text = '{ rs64_th_initSceneForMission_entry(rdram, ctx); }'
+
+[[patches.hook]]
+func = "processCutsceneActions"
+before_vram = 0x800AD21C
+text = '{ rs64_th_processCutsceneActions_800AD21C(rdram, ctx); }'
+
+[[patches.hook]]
+func = "spawnCutsceneObjectsFromList"
+before_vram = 0x800A8228
+text = '{ rs64_th_spawnCutsceneObjectsFromList_800A8228(rdram, ctx); }'
+
+[[patches.hook]]
+func = "spawnCutsceneObjectsFromList"
+before_vram = 0x800A8248
+text = '{ rs64_th_spawnCutsceneObjectsFromList_800A8248(rdram, ctx); }'
+
+[[patches.hook]]
+func = "spawnCutsceneObjectsFromList"
+before_vram = 0x800A8254
+text = '{ rs64_th_spawnCutsceneObjectsFromList_800A8254(rdram, ctx); }'
+
+[[patches.hook]]
+func = "runHangarMenuFromOverlay"
+before_vram = 0x800C68C8
+text = '{ rs64_th_runHangarMenuFromOverlay_800C68C8(rdram, ctx); }'
+
+# The per-stop table bases, re-pointed at host copies that hold the ships' stops.
+[[patches.hook]]
+func = "hangarInitialize"
+before_vram = 0x800A9488
+text = '{ rs64_th_hangarInitialize_800A9488(rdram, ctx); }'
+
+# The bay -> craft table (0x800CC3F8) built with lui/addiu: its host copy, one byte per ship after the stock eight (the register just set).
+[[patches.hook]]
+func = "hangarInitialize"
+before_vram = 0x800A945C
+text = '{ rs64_th_hangarInitialize_800A945C(rdram, ctx); }'
+
+[[patches.hook]]
+func = "hangarInitialize"
+before_vram = 0x800AAA54
+text = '{ rs64_th_hangarInitialize_800AAA54(rdram, ctx); }'
+
+[[patches.hook]]
+func = "hangarInitialize"
+before_vram = 0x800AACE4
+text = '{ rs64_th_hangarInitialize_800AACE4(rdram, ctx); }'
+
+[[patches.hook]]
+func = "composeNpcOrientationMatrix"
+before_vram = 0x800AB40C
+text = '{ rs64_th_composeNpcOrientationMatrix_800AB40C(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateHangarBayScene"
+before_vram = 0x800AC038
+text = '{ rs64_th_updateHangarBayScene_800AC038(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateHangarBayScene"
+before_vram = 0x800AC8FC
+text = '{ rs64_th_updateHangarBayScene_800AC8FC(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateHangarBayScene"
+before_vram = 0x800AC9AC
+text = '{ rs64_th_updateHangarBayScene_800AC9AC(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateHangarBayScene"
+before_vram = 0x800AD0C4
+text = '{ rs64_th_updateHangarBayScene_800AD0C4(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateHangarBayScene"
+before_vram = 0x800AD894
+text = '{ rs64_th_updateHangarBayScene_800AD894(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateHangarBayScene"
+before_vram = 0x800AD9FC
+text = '{ rs64_th_updateHangarBayScene_800AD9FC(rdram, ctx); }'
+
+[[patches.hook]]
+func = "runHangarSelectionFrame"
+before_vram = 0x800AAF18
+text = '{ rs64_th_runHangarSelectionFrame_800AAF18(rdram, ctx); }'
+
+[[patches.hook]]
+func = "runHangarSelectionFrame"
+before_vram = 0x800AAF74
+text = '{ rs64_th_runHangarSelectionFrame_800AAF74(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateHangarBayScene"
+before_vram = 0x800AB6BC
+text = '{ rs64_th_updateHangarBayScene_800AB6BC(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateHangarBayScene"
+before_vram = 0x800AB728
+text = '{ rs64_th_updateHangarBayScene_800AB728(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateHangarBayScene"
+before_vram = 0x800AB7B0
+text = '{ rs64_th_updateHangarBayScene_800AB7B0(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateHangarBayScene"
+before_vram = 0x800AB800
+text = '{ rs64_th_updateHangarBayScene_800AB800(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateHangarBayScene"
+before_vram = 0x800AB938
+text = '{ rs64_th_updateHangarBayScene_800AB938(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateHangarBayScene"
+before_vram = 0x800AB9AC
+text = '{ rs64_th_updateHangarBayScene_800AB9AC(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateHangarBayScene"
+before_vram = 0x800ABAE4
+text = '{ rs64_th_updateHangarBayScene_800ABAE4(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateHangarBayScene"
+before_vram = 0x800ABC50
+text = '{ rs64_th_updateHangarBayScene_800ABC50(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateHangarBayScene"
+before_vram = 0x800ABCB8
+text = '{ rs64_th_updateHangarBayScene_800ABCB8(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateHangarBayScene"
+before_vram = 0x800ABCDC
+text = '{ rs64_th_updateHangarBayScene_800ABCDC(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateHangarBayScene"
+before_vram = 0x800ABD0C
+text = '{ rs64_th_updateHangarBayScene_800ABD0C(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateHangarBayScene"
+before_vram = 0x800ABDA8
+text = '{ rs64_th_updateHangarBayScene_800ABDA8(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateHangarBayScene"
+before_vram = 0x800AC108
+text = '{ rs64_th_updateHangarBayScene_800AC108(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateHangarBayScene"
+before_vram = 0x800AC2D8
+text = '{ rs64_th_updateHangarBayScene_800AC2D8(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateHangarBayScene"
+before_vram = 0x800AC364
+text = '{ rs64_th_updateHangarBayScene_800AC364(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateHangarBayScene"
+before_vram = 0x800AC3F0
+text = '{ rs64_th_updateHangarBayScene_800AC3F0(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateHangarBayScene"
+before_vram = 0x800AC444
+text = '{ rs64_th_updateHangarBayScene_800AC444(rdram, ctx); }'
+
+[[patches.hook]]
+func = "craftSelectionVoiceLineHelper"
+before_vram = 0x800AE2A8
+text = '{ rs64_th_craftSelectionVoiceLineHelper_800AE2A8(rdram, ctx); }'
+
+[[patches.hook]]
+func = "craftSelectionVoiceLineHelper"
+before_vram = 0x800AE360
+text = '{ rs64_th_craftSelectionVoiceLineHelper_800AE360(rdram, ctx); }'
+
 # Ghost co-op: right after choosePlayerCraftAssets, load the other player's craft as the puppet's wingman model.
 # hook: RS64_HOOK_CRAFT_ASSETS
 [[patches.hook]]
@@ -2261,6 +3002,38 @@ func = "updateT16FlightControls"
 before_vram = 0x800BD180
 text = '{ rs64_th_updateT16FlightControls_800BD180(rdram, ctx); }'
 
+# The T-16's target speed (+0xEC) moves by a fixed amount each frame: brake -0.375, boost the throttle amount x 0.6, recovery to cruise +0.3.
+[[patches.hook]]
+func = "updateT16FlightControls"
+before_vram = 0x800BCF58
+text = '{ rs64_th_updateT16FlightControls_800BCF58(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateT16FlightControls"
+before_vram = 0x800BCFD0
+text = '{ rs64_th_updateT16FlightControls_800BCFD0(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateT16FlightControls"
+before_vram = 0x800BD114
+text = '{ rs64_th_updateT16FlightControls_800BD114(rdram, ctx); }'
+
+# The Naboo starfighter's target speed (+0xEC) moves by a fixed amount each frame, as the T-16's does: brake, boost (throttle amount x $f24) and recovery to cruise ($f24).
+[[patches.hook]]
+func = "updateNabooStarfighterFlightControls"
+before_vram = 0x800BDD84
+text = '{ rs64_th_updateNabooStarfighterFlightControls_800BDD84(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateNabooStarfighterFlightControls"
+before_vram = 0x800BDE00
+text = '{ rs64_th_updateNabooStarfighterFlightControls_800BDE00(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateNabooStarfighterFlightControls"
+before_vram = 0x800BDE84
+text = '{ rs64_th_updateNabooStarfighterFlightControls_800BDE84(rdram, ctx); }'
+
 [[patches.hook]]
 func = "updateNabooStarfighterFlightControls"
 before_vram = 0x800BDEB8
@@ -2335,6 +3108,12 @@ func = "updatePlayerDeathSpiral"
 before_vram = 0x800B0F14
 text = '{ rs64_th_updatePlayerDeathSpiral_800B0F14(rdram, ctx); }'
 
+# 60 fps missions: the death fall speed grows x1.01 per frame.
+[[patches.hook]]
+func = "updatePlayerDeathSpiral"
+before_vram = 0x800B0BB0
+text = '{ rs64_th_updatePlayerDeathSpiral_800B0BB0(rdram, ctx); }'
+
 
 # The chase camera speeds up over only the shortest frame time it has seen (+0xA4) and coasts the rest; on PC one short frame shrinks that for good and the camera drags behind.
 [[patches.hook]]
@@ -2347,6 +3126,28 @@ text = '{ rs64_th_updatePlayerVehicleByControlMode_8004D5A4(rdram, ctx); }'
 func = "updatePlayerVehicleByControlMode"
 before_vram = 0x8004D738
 text = '{ rs64_th_updatePlayerVehicleByControlMode_8004D738(rdram, ctx); }'
+
+# Above 30 fps the chase camera of a craft with a hold distance (+0x94, the Falcon) settles onto its follow point and bumps the hull; closer than that distance it stops chasing.
+[[patches.hook]]
+func = "updatePlayerVehicleByControlMode"
+before_vram = 0x8004D6EC
+text = '{ rs64_th_updatePlayerVehicleByControlMode_8004D6EC(rdram, ctx); }'
+
+# At 30 fps the chase camera is drawn one 1/30 s follow step ahead of where it measured its distance; above 30 its drawn position gets the rest of that step,
+# so it frames the craft as the 30 fps game does. The drawn position is copied back into the follow state between updates; the entry hook takes that step out again.
+[[patches.hook]]
+func = "updatePlayerVehicleByControlMode"
+text = '{ rs64_th_updatePlayerVehicleByControlMode_entry(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updatePlayerVehicleByControlMode"
+before_vram = 0x8004D7D8
+text = '{ rs64_th_updatePlayerVehicleByControlMode_8004D7D8(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updatePlayerVehicleByControlMode"
+before_vram = 0x8004DAE0
+text = '{ rs64_th_updatePlayerVehicleByControlMode_8004DAE0(rdram, ctx); }'
 
 
 # 60 fps missions: turret fire cooldown counts frames.

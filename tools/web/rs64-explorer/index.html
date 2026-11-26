@@ -46,11 +46,15 @@
     <label class="mdl" title="Spin speed, negative spins the other way">Auto-rotate <input type="range" id="optSpin" min="-10" max="10" step="0.5" value="0"><output id="spinVal">0</output></label>
     <b class="sec">Rendering</b>
     <div class="pair"><label><input type="checkbox" id="optTex" checked> Textures</label><label><input type="checkbox" id="optWire"> Wireframe</label></div>
-    <label>Filtering <select id="optFilter" style="flex:1"><option value="nearest">Nearest (crisp)</option><option value="linear">Bilinear</option><option value="trilinear">Trilinear (mipmaps)</option><option value="aniso">Anisotropic 16x</option></select></label>
+    <label>Filtering <select id="optFilter" style="flex:1"><option value="nearest">Nearest (crisp)</option><option value="linear" selected>Bilinear</option><option value="trilinear">Trilinear (mipmaps)</option><option value="aniso">Anisotropic 16x</option></select></label>
     <label title="Game: models are prelit and the terrain is baked, as on the N64. Dynamic: real-time sun with cast shadows.">Lighting <select id="optLight" style="flex:1"><option value="game">Game (prelit)</option><option value="dynamic">Dynamic sun + shadows</option></select></label>
     <button id="btnExport" title="Exports what is shown: current object, LOD and markers">Export .glb</button>
     <hr class="divider">
-    <button class="mdl" id="btnImport" title="Replace this craft's model with a .glb">Import craft model (.glb)…</button>
+    <button class="mdl" id="btnImport" title="Replace this model with a .glb">Import model (.glb)…</button>
+    <button class="mdl" id="btnNewShip" hidden title="A new ship in the hangar that flies like this craft">New ship from this craft…</button>
+    <button class="mdl" id="btnPlaceShip" hidden title="Where this ship stands in the hangar">Place in hangar…</button>
+    <button class="mdl" id="btnShipLine" hidden title="The line a crew member says about this ship in the hangar">Craft line…</button>
+    <button class="mdl" id="btnShipAbilities" hidden title="S-foils, boost and aim assist, from any craft">Abilities…</button>
     <hr class="divider mdl">
     <div class="histRow"><button id="btnOpen" data-icon="open" title="Open project (.rs64proj): your saved edits and their undo history"></button><button id="btnSave" data-icon="save" title="Save project (Ctrl+S): your edits and undo history"></button><button id="btnUndo" data-icon="undo" disabled title="Undo (Ctrl+Z)"></button><button id="btnRedo" data-icon="redo" disabled title="Redo (Ctrl+Y or Ctrl+Shift+Z)"></button></div>
     <div class="histRow"><button id="btnMod" data-icon="modExport" disabled title="Save your edits as a mod (zip) to extract into the game's mods folder"></button><button id="btnPlay" data-icon="modPlay" disabled title="Play in game with your edits, starting at what is open here"></button></div>
@@ -69,7 +73,7 @@
     <div id="editPanel" class="panel needs-rom" hidden>
       <div class="editHead"><button id="editTab" data-icon="edit" aria-pressed="false" title="Edit level: switch from viewing to editing terrain, objects and events. Export mod saves the changes"></button><button id="editSpace" data-modes="objects events" title="Global axes"></button><div class="heightBtns" data-modes="terrain"><button id="btnHeightOut" title="Save the terrain as a heightmap image">Export</button><button id="btnHeightIn" title="Load a heightmap image onto the terrain">Import</button></div></div>
       <div id="editBody">
-        <div class="modes" role="group" aria-label="Edit mode"><button data-mode="terrain" data-icon="terrain" title="Terrain: sculpt, paint and heightmaps"></button><button data-mode="objects" data-icon="objects" title="Objects: select, move, rotate, scale, duplicate and delete placed objects"></button><button data-mode="events" data-icon="events" title="Events: select, move and add paths, zones and triggers"></button></div>
+        <div class="modes" role="group" aria-label="Edit mode"><button data-mode="objects" data-icon="objects" title="Objects: select, move, rotate, scale, duplicate and delete placed objects"></button><button data-mode="events" data-icon="events" title="Events: select, move and add paths, zones and triggers"></button><button data-mode="terrain" data-icon="terrain" title="Terrain: sculpt, paint and heightmaps"></button></div>
         <input type="checkbox" id="optSculpt" hidden>
         <div data-modes="terrain" class="rows">
           <input type="hidden" id="sculptTool" value="raise">
@@ -80,7 +84,7 @@
           <label title="Brush radius in terrain grid steps (0.5 world units each)">Radius <input type="range" id="sculptRadius" min="1" max="40" value="8"><output id="sculptRadiusVal">8</output></label>
           <label title="Height change per brush step, in the level's stored height units">Strength <input type="range" id="sculptStrength" min="1" max="20" value="4"><output id="sculptStrengthVal">4</output></label>
           <div class="pair"><label title="Placed objects keep their height above the ground when you raise or lower the terrain under them"><input type="checkbox" id="optFollow" checked> Objects follow</label><label title="Outline the ground tiles: each paints one texture and counts toward the level's tile limit"><input type="checkbox" id="optTileGrid"> Show tiles</label></div>
-          <button id="btnLook" title="The level's water, fog and clouds"></button>
+          <div class="lookRow"><button id="btnLook" title="The level's water, fog and clouds"></button><button id="btnMapSize" data-icon="scale" title="Map size and flight area: drag their sides"></button></div>
           <div id="sculptPalette" class="texPalette" role="listbox" aria-label="Paint texture"></div>
           <div class="sculptFoot"><label id="sculptBudgetRow" hidden>Ground tiles <meter id="sculptBudget" min="0" max="8191" low="6500" high="7800" optimum="0"></meter></label><label id="paintBudgetRow" hidden>Textures near any spot <meter id="paintBudget" min="0" max="360" low="240" high="300" optimum="0"></meter></label><span id="sculptInfo"></span></div>
         </div>
@@ -89,11 +93,11 @@
           <span id="selInfo" class="dim"></span>
           <div id="selFields" class="rows"></div>
           <button id="btnObjectives" hidden title="Objectives: how this level is won or lost"></button>
-          <button id="btnRules" data-modes="events" title="Level events: every rule in this level"></button>
           <div class="pair"><button id="btnDup" data-icon="duplicate" title="Duplicate: adds a copy 4 units along X as the last item of its kind (Ctrl+D)"></button><button id="btnDel" data-icon="delete" title="Delete the selected item (Delete key)"></button></div>
         </div>
       </div>
     </div>
+    <div id="linksPanel" class="panel needs-rom" hidden></div>
     <div id="hud" class="panel needs-rom"></div>
   </div>
   <div id="selHud" class="panel needs-rom"></div>
@@ -135,6 +139,7 @@
   <div id="scene" class="panel needs-rom" hidden>
     <button id="btnLevelSettings" hidden></button>
     <button id="btnBlankLevel" hidden aria-expanded="false" title="A new level with only a player start on flat ground, flown or walked">New blank level</button>
+    <button id="btnRules" data-modes="objects events" title="What happens at the start, on a timer, with the objectives and with each flag, not on one object"></button>
     <b id="cutPickHead">Cutscene</b>
     <div id="cutPickRow"><select id="cutPick" title="The level's cutscenes and in-mission sequences"></select><button id="cutAdd" data-icon="add" aria-expanded="false" title="Add a cutscene to this level"></button><button id="cutDel" data-icon="delete" hidden title="Delete this cutscene"></button></div>
     <label id="cutSeqNameRow" hidden title="Trigger areas and rules start this sequence by its name">Name <input id="cutSeqName" type="text" maxlength="47"></label>
@@ -229,6 +234,7 @@
   <div id="drop"><div class="box" role="button" tabindex="0" title="Choose a ROM file">
     <h2>Drop your Rogue Squadron (USA v1.0 <code>.z64</code>) ROM here</h2>
     <p id="dropErr" class="err"></p>
+    <a id="lastRom" href="#" hidden>Load from previous path</a>
     <p class="loadingMsg"><span class="spinner"></span>Loading ROM...</p>
   </div></div>
 </main>

@@ -25,6 +25,7 @@ extern SDL_Window* g_sdl_window;
 #define HLSL_CPU
 #endif
 #include "hle/rt64_application.h"
+#include "hle/rt64_rs64_host.h"
 #include "hle/rt64_rs64_lights.h"
 #include "hle/rt64_rs64_transition.h"
 #include "librecomp/mods.hpp"
@@ -45,8 +46,6 @@ using recomp::dbg::env_on;
 using recomp::dbg::env_int;
 using recomp::dbg::env_u32;
 
-extern "C" volatile unsigned g_f5_heur[4];
-
 #ifdef RS64_MCP
 extern "C" void rs64_mcp_note_dl();
 #endif
@@ -56,6 +55,8 @@ extern "C" void rs64_mcp_note_dl();
 extern "C" void rs64_data_bp_arm(void* host_addr);
 extern "C" void rs64_data_bp_set2(void* host_addr);
 extern "C" void rs64_data_bp_drain(int vi);
+extern "C" void rs64_write_trap_arm(uint8_t* lo, uint8_t* hi);
+extern "C" void rs64_write_trap_drain(int vi);
 
 #endif
 
@@ -65,10 +66,6 @@ extern void print_stack_with_symbols(void** frames, unsigned short count);
 // ultramodern events.cpp
 extern "C" uint8_t* g_rs64_parse_rdram;             // RDRAM snapshot for the current parse
 
-// lib/rt64 F5 GBI
-extern "C" volatile unsigned g_most_drawn_fb;        // most-drawn color image and its width
-extern "C" volatile unsigned g_most_drawn_fb_width;
-extern "C" volatile unsigned long long g_most_drawn_fb_ms;
 extern "C" volatile uint32_t g_rs64_clear_seq;          // mode-change clear count and size (hook_helpers.cpp)
 extern "C" volatile uint32_t g_rs64_clear_bytes;
 
@@ -242,6 +239,23 @@ void RenderDiag::data_bp_tick()
 {
 
 #ifdef _WIN32
+
+    // ROGUESQ_WRITE_TRAP=<lo>-<hi>: log every write into that RDRAM range (within one 4 KB page), from ROGUESQ_WRITE_TRAP_VI on.
+    static const char* s_wt = env_str("ROGUESQ_WRITE_TRAP");
+    static const int s_wt_vi = env_int("ROGUESQ_WRITE_TRAP_VI", 1);
+    static bool s_wt_armed = false;
+
+    if (s_wt && app->core.RDRAM && !s_wt_armed && vi_count_ >= s_wt_vi)
+    {
+        char* end = nullptr;
+        const uint32_t lo = (uint32_t)std::strtoul(s_wt, &end, 16) & 0x00FFFFFFu;
+        const uint32_t hi = (end && *end == '-') ? ((uint32_t)std::strtoul(end + 1, nullptr, 16) & 0x00FFFFFFu) : lo + 4u;
+
+        s_wt_armed = true;
+        rs64_write_trap_arm(app->core.RDRAM + lo, app->core.RDRAM + hi);
+    }
+
+    if (s_wt_armed) rs64_write_trap_drain(vi_count_);
 
     static const char* s_bp = env_str("ROGUESQ_DATA_BP");
 

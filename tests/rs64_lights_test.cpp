@@ -653,6 +653,16 @@ static void testDedupeLights() {
     h[1].pos[0] = 300.0f;
     h[1].color[0] = 0.5f;
     CHECK(dedupeLights(h, 2, 1.0f) == 2);
+
+    // The pickup's per-part copies, a few units apart, always merge (within 1% of the radius), so it never flips between one and two lights.
+    Resolved p[2];
+    for (Resolved& r : p) {
+        r.kind = KindMesh;
+        r.radius = 1500.0f;
+    }
+
+    p[1].pos[1] = 6.0f;
+    CHECK(dedupeLights(p, 2, 1.0f) == 1);
 }
 
 static void testConsensusCameraDelta() {
@@ -838,8 +848,8 @@ static void testFogFactor() {
 
     // Fog tail: stock up to the knee, continuous there, full exactly at the tail end, and 0 keeps the stock ramp.
     CHECK(fogCurve(0.5f, 1.35f) == 0.5f);
-    CHECK(near(fogCurve(0.85f, 1.35f), 0.85f, 1e-6f));
-    CHECK((fogCurve(1.0f, 1.35f) > 0.85f) && (fogCurve(1.0f, 1.35f) < 1.0f));
+    CHECK(near(fogCurve(0.97f, 1.35f), 0.97f, 1e-6f));
+    CHECK((fogCurve(1.0f, 1.35f) > 0.97f) && (fogCurve(1.0f, 1.35f) < 1.0f));
     CHECK(near(fogCurve(1.35f, 1.35f), 1.0f, 1e-6f));
     CHECK(fogCurve(2.0f, 1.35f) == 1.0f);
     CHECK(fogCurve(1.0f, 0.0f) == 1.0f);
@@ -1531,6 +1541,7 @@ static void testHitColorTable() {
     CHECK(movingCraft("xwing#s0.p1.2"));
     CHECK(movingCraft("tie_fighter#s1.p0.0"));
     CHECK(movingCraft("wmvwng#s0.p0.0") && movingCraft("wmxwng#s0.p2.1"));
+    CHECK(movingCraft("t16#s0.p0.0") && movingCraft("c_t16#s0.p1.0"));
     CHECK(!movingCraft("wmvwngx#s0.p0.0"));
     CHECK(!movingCraft("xwing_hangar#s0.p0.0"));
     CHECK(!movingCraft("platform#s0.p0.0"));
@@ -1539,6 +1550,11 @@ static void testHitColorTable() {
     // Floor draws keep their colour and carry tag 253 (reflection rays skip them).
     const uint32_t f = markFloor(t[0].rgba);
     CHECK(((f >> 24) == 253) && ((f & 0xFFFFFF) == (t[0].rgba & 0xFFFFFF)));
+
+    // Emissive draws that write no depth (a shuttle's translucent exhaust) keep their colour and carry tag 252.
+    const uint32_t d = markDepthless(t[1].rgba);
+    CHECK(((d >> 24) == 252) && ((d & 0xFFFFFF) == (t[1].rgba & 0xFFFFFF)));
+
     const float up[3] = { 0.0f, -1.0f, 0.0f };
     const float dish[3] = { 0.5f, -9.0f, 0.2f };
     const float hull[3] = { 6.0f, -1.0f, 3.0f };

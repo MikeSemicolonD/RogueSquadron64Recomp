@@ -5,6 +5,7 @@
 #include "net/net_link.h"
 #include "util/rdram_words.h"
 #include "mp_host.h"
+#include "rs64/ships.h"
 #include <cstdint>
 #include <cstdio>
 #include <map>
@@ -45,6 +46,9 @@ uint32_t rs64_lobby_hosting(void);
 void rs64_lobby_edit_toggle(void);
 void rs64_lobby_edit_off(void);
 int rs64_ghost_puppet_model(void);
+const char* rs64_ghost_puppet_ship(void);
+const rs64_ships* rs64_ghost_ships(void);
+const rs64_ships* rs64_ghost_ships_v3(void);
 int rs64_ghost_remote_foil(void);
 void rs64_ghost_remote_walker(float head[2], uint8_t shots[2], float* walk);
 void rs64_ghost_atst_fire(uint8_t*, recomp_context*);
@@ -113,6 +117,9 @@ struct Ghost {
 
     // The other player's craft (LAUNCH on the client, READY from craft select on both), -1 unknown.
     int remote_craft = -1;
+
+    // The new hangar ship that craft is (SHIP after READY), "" for the stock craft.
+    std::string remote_ship;
 
     // Client: the host's latest mission pick not yet followed (-1 none). follow_cool spaces the injected presses; status_buf is the RDRAM string for the mission-select status line.
     int host_pick = -1;
@@ -257,6 +264,7 @@ struct Ghost {
     Vec3 prev_pos{};
     std::string launch;
     Puppet puppet;
+
     // When the puppet (or, spectating, this side's craft) samples the other player's stream; the two never run together.
     rs64::ls::PlayClock play_clock;
     bool puppet_shown = false;

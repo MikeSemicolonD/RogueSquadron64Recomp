@@ -24,12 +24,26 @@ struct SessionHeader {
     uint32_t naboo = 0;
     uint32_t secondary = 0;
     uint32_t cruise_bits = 0;
+
     // Widescreen and DRAW DISTANCE (percent) at record time: both change the object culls. draw_pct 0 = not recorded (older files).
     uint32_t widescreen = 0;
     uint32_t draw_pct = 0;
+
+    // Mission logic rate at record time (rs64_logic_hz). 0 = 30 (older files). Above 30 each frame line carries its real dt.
+    uint32_t hz = 0;
+
+    // 1: recorded with the gameplay widenings of normal play (unit active range, widescreen view tests); 0 = stock (older files).
+    uint32_t live = 0;
+
+    // The SELECT GAME pilot slot (0x80130B44), part of the settings hash; 0 in files that predate it, the slot replays use.
+    uint32_t slot = 0;
+
     // gMissionState 0x80130B10..0x80130B3F before initMission: rank and per-level progress carried from the pilot.
     std::array<uint8_t, 0x30> pilot = {};
     std::string build;
+
+    // The mod ship (ships.json id) flown as craft, empty for a stock craft: replays show its model.
+    std::string ship;
 };
 
 std::string format_header(const SessionHeader& h);
@@ -49,14 +63,19 @@ struct FrameInput {
     bool head = false;
     int8_t head_x = 0;
     int8_t head_y = 0;
+
+    // The frame's game-time step in a high-rate recording (written as " t<float bits hex>"); 0 = the fixed 1/hz step.
+    float dt = 0.0f;
 };
 
 std::string format_frame(const FrameInput& f);
 bool parse_frame(const char* line, FrameInput* out);
 
 // "S <frame> <0|1>": the audio thread's answer to isSongHandleActive in tickSongFadeTimer on that frame (a sim input).
-std::string format_song_event(uint32_t frame, bool active);
-bool parse_song_event(const char* line, uint32_t* frame, bool* active);
+// "P <frame> <0|1>": the same for the speech-idle check that gates the mission-end responders (requestSpeechResponseMode1/2).
+std::string format_song_event(uint32_t frame, bool active, char kind = 'S');
+// Without kind, only "S" lines parse.
+bool parse_song_event(const char* line, uint32_t* frame, bool* active, char* kind = nullptr);
 
 // ROGUESQ_LS_SEED text (decimal or 0x hex) to a seed; 0 for null, junk or zero (the caller keeps its default).
 uint32_t parse_seed(const char* s);
@@ -104,8 +123,11 @@ std::string format_hash_line(uint32_t frame, const FrameHash& h);
 // One line per byte region ("<name> <hex>"), for diffing two runs at a divergent frame.
 std::string dump_regions(const uint8_t* rdram);
 
-// A recording: its header, frames and song events. False, with a log line, when the file can't be read or its header is bad.
-bool load_replay(const char* path, SessionHeader* h, std::vector<FrameInput>* frames, std::map<uint32_t, std::vector<uint8_t>>* song);
+// The file for mission attempt n of one recording session: the path itself for 1, else "<stem>_try<n>.rec".
+std::string attempt_path(const std::string& path, int n);
+
+// A recording: its header, frames, song events and (when speech is given) speech-idle events. False, with a log line, when the file can't be read or its header is bad.
+bool load_replay(const char* path, SessionHeader* h, std::vector<FrameInput>* frames, std::map<uint32_t, std::vector<uint8_t>>* song, std::map<uint32_t, std::vector<uint8_t>>* speech = nullptr);
 // An attract demo is playing (gGameSettings flags 0x80130B50 & 0x60).
 bool demo_active(const uint8_t* rdram);
 
@@ -140,14 +162,13 @@ inline std::vector<PauseTarget> parse_pause_targets(const std::string& spec)
 }
 
 // A target names its clock or, at a dot, any of its sub-states (menu covers menu.options).
+// "ls" is the in-game clock's old name.
 inline bool pause_clock_matches(const std::string& target, const std::string& clock)
 {
 
+    if (target == "ls") return clock == "ingame";
+
     return clock == target || (clock.size() > target.size() && clock.compare(0, target.size(), target) == 0 && clock[target.size()] == '.');
 }
-
-// Host side (lockstep.cpp): a controller poll through the ROGUESQ_INPUT_RECORD / ROGUESQ_INPUT_REPLAY session recording; `live` polls the real input when not replaying.
-using LiveInput = bool (*)(int controller_num, uint16_t* buttons, float* x, float* y);
-bool session_input(int controller_num, uint16_t* buttons, float* x, float* y, LiveInput live);
 
 }

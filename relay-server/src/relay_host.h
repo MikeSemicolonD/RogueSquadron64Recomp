@@ -16,12 +16,16 @@ class Host {
 public:
     ~Host() { close(0); }
     bool open(uint16_t port);
+
     // Services the socket for up to timeout_ms, feeding relay and carrying out its actions as they come.
     void service(Relay& relay, int timeout_ms);
+
     // Carries out actions the relay queued outside service() (console commands, tick).
     void apply(Relay& relay);
+
     // Lets queued disconnects reach the players (up to wait_ms), then closes.
     void close(int wait_ms = 500);
+
     // Peers arriving from this bridge's sockets are reported with their browser address.
     void set_bridge(const Bridge* bridge) { bridge_ = bridge; }
 

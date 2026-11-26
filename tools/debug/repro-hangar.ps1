@@ -6,7 +6,7 @@
 param(
   [string]$Env = "",                 # semicolon-separated NAME=VALUE forwarded to the game
   [int]$BootMs = 11500,              # wait after launch before the first input
-  [string]$Title = "Star Wars: Rogue Squadron 64 Recompiled"
+  [string]$Title = "Rogue Squadron 64 Recompiled"
 )
 
 $ErrorActionPreference = "Stop"

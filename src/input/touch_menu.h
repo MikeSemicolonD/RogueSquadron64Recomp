@@ -37,7 +37,7 @@ namespace rs64::touch {
     // 320x240 game-screen point -> normalized window coords (same presentation box as the hit boxes).
     void n64_to_window(float px, float py, float win_w, float win_h, float* nx, float* ny);
 
-    // SELECT GAME (menu.account.enter_name): a tap on a side save slot steps toward it.
+    // SELECT GAME (menu.select_game): a tap on a side save slot steps toward it.
     TapAction select_game_tap(float x, float y, float win_w, float win_h);
     // SELECT LEVEL: the ◁/▷ arrows in the bottom corners step levels; the bottom "PRESS C FOR LEVEL DESCRIPTION" line
     // presses C. This screen fills the window, so window coords.

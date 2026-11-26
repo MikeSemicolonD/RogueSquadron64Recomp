@@ -266,7 +266,7 @@ h1 img {
 }
 
 main {
-  max-width: 1100px;
+  max-width: 1320px;
   margin: 0 auto;
   padding: 48px 16px 64px;
 }
@@ -316,7 +316,7 @@ a.card h3::after {
 a.card:hover h3::after, a.card:focus-visible h3::after { transform: translate(4px, -4px); }
 
 /* At most 3 columns (2 gaps of 16px); fewer when a column would drop under 240px. */
-.features { grid-template-columns: repeat(auto-fit, minmax(max(240px, calc((100% - 32px) / 3)), 1fr)); }
+.features { grid-template-columns: repeat(auto-fit, minmax(max(220px, calc((100% - 48px) / 4)), 1fr)); }
 
 .features .card { padding: 16px 18px; }
 
@@ -343,11 +343,72 @@ a.card:hover h3::after, a.card:focus-visible h3::after { transform: translate(4p
 
 .shots {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(240px, 45%), 1fr));
+  grid-auto-flow: column;
+  grid-auto-columns: calc((100% - 32px) / 5);
   gap: 8px;
+  margin: 0 -4px;
+  padding: 6px 4px 16px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline: 4px;
+  scroll-behavior: smooth;
+  scrollbar-width: none;
+}
+
+.shots::-webkit-scrollbar { display: none; }
+
+.carousel {
+  position: relative;
+  margin-bottom: 32px;
+}
+
+.carousel .nav {
+  position: absolute;
+  top: calc(50% - 5px);
+  z-index: 1;
+  width: 40px;
+  height: 40px;
+  border: 1px solid rgba(245, 197, 66, .5);
+  border-radius: 50%;
+  background: rgba(18, 8, 4, .75);
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: var(--gold);
+  cursor: pointer;
+  transform: translateY(-50%);
+  transition: color .2s, border-color .2s, opacity .2s;
+}
+
+.carousel .nav svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.carousel .nav:hover { color: var(--gold-hi); border-color: var(--gold); }
+
+.carousel .nav:disabled { opacity: 0; pointer-events: none; }
+
+.carousel .prev { left: 8px; }
+
+.carousel .next { right: 8px; }
+
+@media (min-width: 1440px) {
+  .carousel .prev { left: -52px; }
+  .carousel .next { right: -52px; }
+}
+
+@media (max-width: 700px) {
+  .shots { grid-auto-columns: calc((100% - 8px) / 2); }
 }
 
 .shots button {
+  scroll-snap-align: start;
   padding: 0;
   border: 0;
   background: none;
@@ -408,25 +469,56 @@ a.card:hover h3::after, a.card:focus-visible h3::after { transform: translate(4p
 }
 
 footer {
-  max-width: 1100px;
+  max-width: 1320px;
   margin: 0 auto;
   padding: 0 16px 40px;
   color: var(--muted);
   font-size: 14px;
 }
 
-footer a { color: var(--gold); }
-
 .credits {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 8px 24px;
-  margin: 0 0 32px;
+  columns: 2 320px;
+  column-gap: 40px;
+  margin: 0;
   padding-left: 18px;
   font-size: 15px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.credits li {
+  break-inside: avoid;
+  margin-bottom: 10px;
 }
 
 .credits li::marker { color: var(--gold); }
+
+.credits-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 28px 0 12px;
+  font: 700 20px Rajdhani, sans-serif;
+  letter-spacing: .08em;
+  color: var(--gold-hi);
+  white-space: nowrap;
+}
+
+.credits-head::before, .credits-head::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid rgba(245, 197, 66, .35);
+}
+.credits a, footer a {
+  color: var(--gold);
+  text-decoration: none;
+  transition: color .2s;
+}
+
+.credits a:hover, footer a:hover {
+  color: var(--gold-hi);
+  text-decoration: underline;
+}
 
 .fine {
   padding-top: 20px;
@@ -516,6 +608,9 @@ footer a { color: var(--gold); }
 
   <section id="screenshots">
   <h2>Screenshots</h2>
+  <div class="carousel">
+  <button type="button" class="nav prev" aria-label="Previous screenshots"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+  <button type="button" class="nav next" aria-label="Next screenshots"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></button>
   <div class="shots">
     <button type="button"><img src="screenshots/Capture1.png" alt="Rogue Squadron recomp screenshot" loading="lazy"></button>
     <button type="button"><img src="screenshots/Capture2.png" alt="Rogue Squadron recomp screenshot" loading="lazy"></button>
@@ -526,18 +621,23 @@ footer a { color: var(--gold); }
     <button type="button"><img src="screenshots/Capture7.png" alt="Rogue Squadron recomp screenshot" loading="lazy"></button>
     <button type="button"><img src="screenshots/Capture8.png" alt="Rogue Squadron recomp screenshot" loading="lazy"></button>
   </div>
+  </div>
   </section>
 
   <section id="credits">
   <h2>Credits</h2>
   <ul class="credits">
     <li><a href="https://github.com/Tmcg2/rogue_squadron64">Tmcg2</a>: the companion decomp project</li>
-    <li><a href="https://github.com/terminalcommand">terminalcommand</a>: Wayland fixes</li>
-    <li><a href="https://github.com/gpeter12">gpeter12</a>: play testing on Linux Mint and the setup script</li>
     <li><a href="https://github.com/dpethes/rerogue">Dávid Pethes</a>: rerogue and the <a href="https://satd.sk/pages/rs/">PC format write-up</a></li>
     <li><a href="https://github.com/jrra/rerogue">jrra</a>: a community fork of rerogue</li>
     <li><a href="https://github.com/N64Recomp/N64Recomp">N64Recomp</a> and <a href="https://github.com/N64Recomp/N64ModernRuntime">N64ModernRuntime</a>: the static recompiler and the runtime it runs on, <a href="https://github.com/MikeSemicolonD/N64ModernRuntime">forked</a> with both in one repo</li>
     <li><a href="https://github.com/rt64/rt64">RT64</a>: the renderer, <a href="https://github.com/MikeSemicolonD/rt64">forked</a> to read Factor 5's display lists</li>
+  </ul>
+  <h3 class="credits-head">Contributors / Testers</h3>
+  <ul class="credits">
+    <li><a href="https://github.com/terminalcommand">terminalcommand</a>: Wayland fixes</li>
+    <li><a href="https://github.com/gpeter12">gpeter12</a>: play testing on Linux Mint and testing the setup script</li>
+    <li><a href="https://github.com/nandologia">nandologia</a>: play testing on Batocera</li>
   </ul>
   </section>
 </main>
@@ -553,13 +653,45 @@ footer a { color: var(--gold); }
 <script>
 // Marks the tab of the section in view.
 const tabs = [...document.querySelectorAll('.tabs a[href^="#"]')];
-const seen = new IntersectionObserver(entries => {
-  for (const e of entries) {
-    if (!e.isIntersecting) continue;
-    for (const t of tabs) t.hash === '#' + e.target.id ? t.setAttribute('aria-current', 'true') : t.removeAttribute('aria-current');
+// The last section whose top is above a third of the way down wins; at the page bottom the last tab does.
+const targets = tabs.map(t => document.querySelector(t.hash));
+const setTab = cur => tabs.forEach((t, i) => i === cur ? t.setAttribute('aria-current', 'true') : t.removeAttribute('aria-current'));
+let clicked = false;
+
+const markTab = () => {
+
+  if (clicked)
+  {
+    return;
   }
-}, { rootMargin: '-45% 0px -50% 0px' });
-for (const t of tabs) seen.observe(document.querySelector(t.hash));
+
+  const atBottom = innerHeight + scrollY >= document.documentElement.scrollHeight - 2;
+  let cur = 0;
+
+  targets.forEach((s, i) => {
+    if (s.getBoundingClientRect().top <= innerHeight / 3) cur = i;
+  });
+
+  if (atBottom) cur = tabs.length - 1;
+
+  setTab(cur);
+};
+
+// A clicked tab stays lit through its jump, even when the page bottoms out first; the user's own scroll hands back to markTab.
+tabs.forEach((t, i) => t.addEventListener('click', () => {
+  clicked = true;
+  setTab(i);
+}));
+
+for (const ev of ['wheel', 'touchstart', 'keydown', 'mousedown']) {
+  addEventListener(ev, e => {
+    if (!e.target.closest?.('.tabs')) clicked = false;
+  }, { passive: true });
+}
+
+addEventListener('scroll', markTab, { passive: true });
+addEventListener('resize', markTab);
+markTab();
 
 // Click a screenshot to view it full screen; arrows step through, any click or Esc closes.
 // Header background cycles from the one it opens on through the grid's screenshots. Each swap
@@ -659,11 +791,27 @@ const step = dir => {
   setThumbHidden(shown, false);
   shown = (shown + dir + shots.length) % shots.length;
   setThumbHidden(shown, true);
+  shots[shown].parentElement.scrollIntoView({ behavior: 'instant', block: 'nearest', inline: 'nearest' });
   big.src = shots[shown].src;
   big.animate([{ opacity: 0, transform: `translateX(${dir * 60}px)` }, { opacity: 1, transform: 'none' }], { duration: 260 * motion, easing: ease });
 };
 
 shots.forEach((img, i) => img.parentElement.addEventListener('click', () => open(i)));
+
+// Carousel arrows page by the visible width; each hides at its end.
+const strip = document.querySelector('.shots');
+const [prev, next] = document.querySelectorAll('.carousel .nav');
+const syncNav = () => {
+
+  prev.disabled = strip.scrollLeft <= 1;
+  next.disabled = strip.scrollLeft + strip.clientWidth >= strip.scrollWidth - 1;
+};
+
+prev.addEventListener('click', () => strip.scrollBy({ left: -strip.clientWidth }));
+next.addEventListener('click', () => strip.scrollBy({ left: strip.clientWidth }));
+strip.addEventListener('scroll', syncNav, { passive: true });
+addEventListener('resize', syncNav);
+syncNav();
 box.addEventListener('click', close);
 box.addEventListener('cancel', e => {
   e.preventDefault();

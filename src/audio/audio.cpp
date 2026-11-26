@@ -10,6 +10,7 @@
 #include <vector>
 #include "os_compat.h"
 #include "ultramodern/ultra64.h"
+#include "ultramodern/ultramodern.hpp"
 #include "util/debug_logs.h"
 
 #if defined(RS64_OPENXR)
@@ -24,6 +25,12 @@
 
 #if defined(__EMSCRIPTEN__)
 #include "audio/audio_web.h"
+#endif
+
+#if defined(__ANDROID__)
+#include <aaudio/AAudio.h>
+#include <algorithm>
+#include <mutex>
 #endif
 
 using recomp::dbg::env_on;
@@ -537,6 +544,143 @@ RspUcodeFunc* get_rsp_microcode(const OSTask* task) {
 
 #endif
 
+#if defined(__ANDROID__)
+
+// SDL2's Android outputs drop audio (AAudio writes with a 1 ms timeout) or land on the low-latency mixer, which underruns on Samsung phones.
+// This stream pulls from the game's queue at normal latency instead.
+namespace aaudio {
+
+    static constexpr size_t kRingSamples = 1u << 18;
+
+    static std::mutex s_lock;
+    static std::vector<int16_t> s_ring(kRingSamples);
+    static size_t s_head = 0;
+    static size_t s_count = 0;
+    static AAudioStream* s_stream = nullptr;
+    static std::atomic<bool> s_lost{false};
+
+    static aaudio_data_callback_result_t on_data(AAudioStream*, void*, void* out, int32_t frames)
+    {
+
+        int16_t* dst = static_cast<int16_t*>(out);
+        const size_t want = (size_t)frames * 2;
+        std::lock_guard<std::mutex> lk(s_lock);
+        const size_t n = std::min(want, s_count);
+
+        for (size_t i = 0; i < n; i++) {
+            dst[i] = s_ring[(s_head + i) % kRingSamples];
+        }
+
+        s_head = (s_head + n) % kRingSamples;
+        s_count -= n;
+        std::fill(dst + n, dst + want, (int16_t)0);
+
+        return AAUDIO_CALLBACK_RESULT_CONTINUE;
+    }
+
+    // Headphones plugged or pulled disconnect the stream; the next buffer reopens it.
+    static void on_error(AAudioStream*, void*, aaudio_result_t)
+    {
+        s_lost.store(true);
+    }
+
+    static uint32_t open(int freq)
+    {
+
+        AAudioStreamBuilder* builder = nullptr;
+
+        if (AAudio_createStreamBuilder(&builder) != AAUDIO_OK)
+        {
+            return 0;
+        }
+
+        AAudioStreamBuilder_setFormat(builder, AAUDIO_FORMAT_PCM_I16);
+        AAudioStreamBuilder_setChannelCount(builder, 2);
+        AAudioStreamBuilder_setSampleRate(builder, freq);
+        AAudioStreamBuilder_setPerformanceMode(builder, AAUDIO_PERFORMANCE_MODE_NONE);
+        AAudioStreamBuilder_setUsage(builder, AAUDIO_USAGE_GAME);
+        AAudioStreamBuilder_setDataCallback(builder, on_data, nullptr);
+        AAudioStreamBuilder_setErrorCallback(builder, on_error, nullptr);
+
+        const aaudio_result_t result = AAudioStreamBuilder_openStream(builder, &s_stream);
+
+        AAudioStreamBuilder_delete(builder);
+
+        if (result != AAUDIO_OK)
+        {
+            SDL_SetError("AAudio: %s", AAudio_convertResultToText(result));
+            s_stream = nullptr;
+
+            return 0;
+        }
+
+        s_lost.store(false);
+        AAudioStream_requestStart(s_stream);
+
+        return 1;
+    }
+
+    static void clear()
+    {
+
+        std::lock_guard<std::mutex> lk(s_lock);
+
+        s_count = 0;
+    }
+
+    // Closing waits for a running data callback, so it must not hold s_lock.
+    static void close()
+    {
+
+        if (s_stream != nullptr) {
+            AAudioStream_close(s_stream);
+            s_stream = nullptr;
+        }
+
+        clear();
+    }
+
+    static int queue(const void* data, uint32_t bytes)
+    {
+
+        const int16_t* src = static_cast<const int16_t*>(data);
+        std::lock_guard<std::mutex> lk(s_lock);
+        const size_t n = std::min((size_t)bytes / 2, kRingSamples - s_count);
+
+        for (size_t i = 0; i < n; i++) {
+            s_ring[(s_head + s_count + i) % kRingSamples] = src[i];
+        }
+
+        s_count += n;
+
+        return 0;
+    }
+
+    static uint32_t queued_bytes()
+    {
+
+        std::lock_guard<std::mutex> lk(s_lock);
+
+        return (uint32_t)(s_count * 2);
+    }
+
+    static bool lost()
+    {
+        return s_lost.load();
+    }
+
+}
+
+#define SDL_OpenAudioDevice(device, capture, desired, obtained, changes) ::rs64::audio::aaudio::open((desired)->freq)
+#define SDL_CloseAudioDevice(id) ::rs64::audio::aaudio::close()
+#define SDL_PauseAudioDevice(id, paused) ((void)0)
+#define SDL_QueueAudio(id, data, bytes) ::rs64::audio::aaudio::queue((data), (bytes))
+#define SDL_GetQueuedAudioSize(id) ::rs64::audio::aaudio::queued_bytes()
+#define SDL_ClearQueuedAudio(id) ::rs64::audio::aaudio::clear()
+#define SDL_GetCurrentAudioDriver() "aaudio"
+
+#endif
+
 static SDL_AudioDeviceID audio_device = 0;
 
 #ifdef __ANDROID__
@@ -552,23 +696,83 @@ static std::atomic<bool> g_android_audio_reopen{false};
 
 static uint32_t audio_sample_rate = 48000;
 
+// The rate the output device was opened at. It stays open through the game's rate changes (48000, 22050, 32000 within one boot): closing and
+// reopening it clicks, in this game's sound and in other programs'. Sound at another rate goes through audio_resampler.
+static uint32_t audio_device_rate = 0;
+
 static void open_audio_device(uint32_t freq);
+
+#if !defined(__EMSCRIPTEN__)
+
+static SDL_AudioStream* audio_resampler = nullptr;
+
+static void set_resampler(uint32_t freq)
+{
+
+    if (audio_resampler != nullptr) {
+        SDL_FreeAudioStream(audio_resampler);
+        audio_resampler = nullptr;
+    }
+
+    if (freq != audio_device_rate) {
+        audio_resampler = SDL_NewAudioStream(AUDIO_S16SYS, 2, (int)freq, AUDIO_S16SYS, 2, (int)audio_device_rate);
+    }
+}
+
+#endif
+
+// Hands stereo frames at the game's rate to the device.
+static void queue_device(const int16_t* data, size_t frames)
+{
+
+#if !defined(__EMSCRIPTEN__)
+
+    if (audio_resampler != nullptr) {
+        static std::vector<int16_t> s_converted;
+
+        SDL_AudioStreamPut(audio_resampler, data, (int)(frames * 2 * sizeof(int16_t)));
+
+        const int ready = SDL_AudioStreamAvailable(audio_resampler);
+
+        if (ready > 0) {
+            s_converted.resize((size_t)ready / sizeof(int16_t));
+
+            const int got = SDL_AudioStreamGet(audio_resampler, s_converted.data(), ready);
+
+            if (got > 0) SDL_QueueAudio(audio_device, s_converted.data(), (Uint32)got);
+        }
+
+        return;
+    }
+
+#endif
+
+    SDL_QueueAudio(audio_device, data, (Uint32)(frames * 2 * sizeof(int16_t)));
+}
 
 void set_frequency(uint32_t freq)
 {
-    // Don't churn the device when the rate hasn't changed — each close/reopen
-    // flushes the SDL queue and clicks. The game re-sets the same AI rate
-    // repeatedly (observed 22050 set 3x), so this removes those pops.
+
     if (audio_device && freq == audio_sample_rate)
     {
         return;
     }
 
+#if !defined(__EMSCRIPTEN__)
+
+    if (audio_device) {
+        audio_sample_rate = freq;
+        set_resampler(freq);
+
+        return;
+    }
+
+#endif
+
     open_audio_device(freq);
 }
 
-// VR: the headset's playback device instead of the PC default; null (the default) without VR or such a device.
-// shortcut: matches Meta's Link device names only, add other headsets' names once someone tests them.
+// VR on Meta's runtime: the Link headset's playback device instead of the PC default; null (the default) otherwise, since SteamVR makes its headset the default itself.
 static const char* vr_audio_device()
 {
 
@@ -580,7 +784,7 @@ static const char* vr_audio_device()
     static std::string s_name;
 
     // The Meta virtual device exists whenever its software is installed, so a VR launch that fell back to flat keeps the PC output.
-    if (!rs64::vr::has_session())
+    if (!rs64::vr::has_session() || !rs64::vr::meta_runtime())
     {
         return nullptr;
     }
@@ -635,9 +839,15 @@ static void open_audio_device(uint32_t freq)
         return;
     }
 
+    audio_device_rate = freq;
+
+#if !defined(__EMSCRIPTEN__)
+    set_resampler(freq);
+#endif
+
     SDL_PauseAudioDevice(audio_device, 0);
 
-    fprintf(stderr, "[Audio] device OPENED freq=%u on %s (output path live)\n", freq, (device != nullptr) ? device : "the default output");
+    fprintf(stderr, "[Audio] device OPENED freq=%u on %s, %s driver (output path live)\n", freq, (device != nullptr) ? device : "the default output", SDL_GetCurrentAudioDriver());
     fflush(stderr);
 }
 
@@ -659,7 +869,7 @@ void queue_samples(int16_t* samples, size_t num_samples)
 
     static uint32_t s_probe_until = 0;
 
-    if (g_android_audio_reopen.exchange(false))
+    if (g_android_audio_reopen.exchange(false) || rs64::audio::aaudio::lost())
     {
         open_audio_device(audio_sample_rate);
         s_probe_until = SDL_GetTicks() + 10000;
@@ -686,7 +896,16 @@ void queue_samples(int16_t* samples, size_t num_samples)
         // Underrun gauge: the device queue was already dry when this buffer arrived (audible gap).
         static int warm = 0;
 
-        if (++warm > 64 && SDL_GetQueuedAudioSize(audio_device) == 0) ++g_rs64_audio_underruns;
+        const bool dry = (++warm > 64) && (SDL_GetQueuedAudioSize(audio_device) == 0);
+
+        // The AI clock drops the time of a long audio-thread stall, so the queue never refills by itself: pad it with silence or every later jitter pops.
+        if (dry) {
+            static std::vector<int16_t> s_pad;
+
+            ++g_rs64_audio_underruns;
+            s_pad.assign((size_t)audio_sample_rate * 40 / 1000 * 2, 0);
+            queue_device(s_pad.data(), s_pad.size() / 2);
+        }
 
         // Diagnostic (ROGUESQ_LOG_AUDIO_OUT=1): confirm PCM flows + silence vs content.
         static int s_lo = -1;
@@ -832,7 +1051,34 @@ void queue_samples(int16_t* samples, size_t num_samples)
             for (size_t i = 0; i < n; ++i) samples[i] = (int16_t)((float)samples[i] * s_gain);
         }
 
-        SDL_QueueAudio(audio_device, samples, (Uint32)num_bytes);
+        // The game clock can run faster or slower than real time (ROGUESQ_SPEED, the MCP speed tool). The game's demand-paced audio loop has to drain at that
+        // rate too, or everything that waits on sound (cutscene speech and music) stays at 1x: SDL gets one stereo frame for every `rate` the game made.
+        const double rate = ultramodern::get_speed();
+
+        if (rate != 1.0)
+        {
+            static double s_owed = 0.0;
+            static std::vector<int16_t> s_out;
+            const size_t frames = num_bytes / 4;
+
+            s_out.clear();
+
+            for (size_t f = 0; f < frames; ++f) {
+                s_owed += 1.0 / rate;
+
+                while (s_owed >= 1.0) {
+                    s_out.push_back(samples[f * 2]);
+                    s_out.push_back(samples[f * 2 + 1]);
+                    s_owed -= 1.0;
+                }
+            }
+
+            if (!s_out.empty()) queue_device(s_out.data(), s_out.size() / 2);
+
+            return;
+        }
+
+        queue_device(samples, num_bytes / 4);
     }
 }
 
@@ -841,7 +1087,12 @@ size_t get_frames_remaining()
 
     if (!audio_device) return 0;
 
-    size_t frames = SDL_GetQueuedAudioSize(audio_device) / 4;  // 4 bytes/stereo frame
+    // Stereo frames queued at the device's rate, counted at the game's.
+    size_t frames = SDL_GetQueuedAudioSize(audio_device) / 4;
+
+    if ((audio_device_rate != 0) && (audio_device_rate != audio_sample_rate)) {
+        frames = (size_t)((uint64_t)frames * audio_sample_rate / audio_device_rate);
+    }
 
     // Deepen the game's audio target. ultramodern feeds this to the demand-paced game
     // audio loop, which keeps producing small (~96-frame) buffers until the reported
@@ -868,7 +1119,10 @@ size_t get_frames_remaining()
 
     size_t cushion = (size_t)audio_sample_rate * (unsigned)ms / 1000u;
 
-    return frames > cushion ? frames - cushion : 0;
+    // In game frames: at a game clock `rate` times real time, each queued SDL frame stands for `rate` of them (queue_samples).
+    const double rate = ultramodern::get_speed();
+
+    return frames > cushion ? (size_t)((double)(frames - cushion) * rate) : 0;
 }
 
 #ifdef __ANDROID__

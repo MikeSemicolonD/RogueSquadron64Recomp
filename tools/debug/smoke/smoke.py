@@ -1,6 +1,6 @@
 """Visual + stat smoke test: every target in manifest.toml captured on exact frames, then compared with a baseline run.
 
-  python tools/debug/smoke/smoke.py run [--tag current] [--sections levels,changes,menus,pause,cutscenes,perf] [--filter level00] [--build Release] [--speed 16] [--platforms windows]
+  python tools/debug/smoke/smoke.py run [--tag current] [--sections boot,levels,changes,menus,pause,cutscenes,perf,memory,camera] [--filter level00] [--build Release] [--speed 16] [--platforms windows]
   python tools/debug/smoke/smoke.py compare [--baseline baseline] [--tag current] [--platforms windows]
   python tools/debug/smoke/smoke.py clean
 
@@ -10,7 +10,6 @@ the game state, draw counts, frame times and (in missions) player, camera, wingm
 Make a baseline with `run --tag baseline`. Frame times in the other sections run at --speed; the perf section measures each repo video preset at real speed.
 """
 import argparse
-import html
 import json
 import os
 import re
@@ -27,7 +26,7 @@ from PIL import Image, ImageChops
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "mcp"))
 
-from rs64_mcp import REPO, Game, MissionEnded, symbol_table  # noqa: E402
+from rs64_mcp import REPO, Game, GameError, MissionEnded, symbol_table  # noqa: E402
 
 BUILDS = os.path.join(REPO, "build")
 STAGE = os.path.join(REPO, "build", "Smoke")
@@ -36,7 +35,7 @@ OUT = os.path.join(REPO, "dumps", "smoke")
 # invincibility: an unflown craft would otherwise crash (the Trench Run walls) and stop the chain on a game over.
 MODS = ["display-settings", "controls-menu", "quit-prompt", "larger_object_pool.nrm", "invincibility.nrm"]
 MOD_IDS = ["display-settings", "controls-menu", "quit-prompt", "larger_object_pool", "invincibility"]
-SECTIONS = ["levels", "changes", "menus", "pause", "cutscenes", "perf"]
+SECTIONS = ["boot", "levels", "changes", "menus", "pause", "cutscenes", "perf", "memory", "camera"]
 # The folder under build/ each platform is staged into and launched from (rs64_mcp Game.launch); None = no launcher yet. Linux runs the WSL Release build
 # (LINUX_BUILD in the default distro's home, configured with -DRS64_MCP=ON) under WSL; Android runs the installed APK (gradlew assembleRelease -Prs64Mcp=ON) on ANDROID_SERIAL
 # or the one device adb sees.
@@ -264,10 +263,10 @@ def enter(game, target_dir):
 
 
 def hold(game, clock, shots, mission, after_restart=False):
-    """Hold on each (frame, suffix, action) of `clock` in turn; action(game), if any, runs on the held frame before stepping on. Shots are named mission-<frame> on the ls clock."""
+    """Hold on each (frame, suffix, action) of `clock` in turn; action(game), if any, runs on the held frame before stepping on. Shots are named mission-<frame> on the ingame clock."""
 
     prev = None
-    name = "mission" if clock == "ls" else clock
+    name = "mission" if clock == "ingame" else clock
 
     for frame, suffix, action in shots:
         if action:
@@ -292,14 +291,32 @@ def tap(game, buttons, wait):
     """Press for 2 frames from a held frame, then hold again `wait` lockstep frames later."""
 
     game.call("press", {"buttons": buttons, "frames": 2})
-    game.call("step", {"frames": wait, "clock": "ls", "timeout_s": 120}, 135)
+    game.call("step", {"frames": wait, "clock": "ingame", "timeout_s": 120}, 135)
+
+
+def select_pause_page(game, step, page):
+    """Puts the pause menu's cursor on the entry that opens `step`; False, noted in skipped.txt, when this platform's menu has no such entry
+    (RAY TRACING needs ray queries, which WSL's Dozen driver has none of)."""
+
+    try:
+        game.call("pause_menu", {"page": step})
+    except GameError as e:
+        if "no entry on the open pause page" not in str(e):
+            raise
+
+        with open(os.path.join(game.target_dir, "skipped.txt"), "a", encoding="utf-8") as f:
+            f.write(f"pause page {page}: not on this platform's pause menu\n")
+
+        return False
+
+    return True
 
 
 def pause_settings_cycle(game, at, pages, skip):
     """Held at lockstep frame `at`, pause and open each pause page path (as in pause_chain), then step every setting row through all its values with A,
     one shot per value (pause-<page>-<key>-NN), until it is back where it started; B and START return to the game. Rows in `skip` are left alone."""
 
-    game.call("pause_at", {"clock": "ls", "frame": at, "timeout_s": 240}, 255)
+    game.call("pause_at", {"clock": "ingame", "frame": at, "timeout_s": 240}, 255)
 
     # START can land on a fly-in or skip-intro prompt instead of pausing, and a page can take an extra press to close, so go by the page the game reports.
     for _ in range(8):
@@ -312,20 +329,26 @@ def pause_settings_cycle(game, at, pages, skip):
 
     for page in pages:
         path = [int(s) if s.isdigit() else s for s in str(page).split("/")]
+        offered = True
 
         for step in path:
             before = game.call("pause_menu", {})["page"]
 
+            if not select_pause_page(game, step, page):
+                offered = False
+                break
+
             for _ in range(4):
-                game.call("pause_menu", {"page": step})
                 tap(game, ["a"], PAUSE_SETTLE)
 
                 if game.call("pause_menu", {})["page"] != before:
                     break
+
+                game.call("pause_menu", {"page": step})
             else:
                 raise RuntimeError(f"A did not open {step} on the way to {page}")
 
-        rows = game.call("pause_menu", {})["rows"]
+        rows = game.call("pause_menu", {})["rows"] if offered else []
 
         for k, row in enumerate(rows):
             key = row["key"]
@@ -364,14 +387,14 @@ def pause_settings_cycle(game, at, pages, skip):
 def pause_chain(out, level, at, pages, frames, speed):
     """Every pause page in one fixed-step mission: held on lockstep frame `at`, START opens the root, and each page path ("1/display": a page id or mod page
     name per level) is opened from the root on held frames (MCP pause_menu sets the cursor, then A) and shot `frames` lockstep frames later; B per level goes back
-    to the root. The ls clock runs on while paused, so every shot is frame-exact."""
+    to the root. The ingame clock runs on while paused, so every shot is frame-exact."""
 
     settle = PAUSE_SETTLE
     press = tap
 
     def body(game):
 
-        game.call("pause_at", {"clock": "ls", "frame": at, "timeout_s": 240}, 255)
+        game.call("pause_at", {"clock": "ingame", "frame": at, "timeout_s": 240}, 255)
         press(game, ["start"], settle)
 
         for page in pages:
@@ -379,17 +402,28 @@ def pause_chain(out, level, at, pages, frames, speed):
 
             enter(game, os.path.join(out, f"pause_{level}_{str(page).replace('/', '-')}"))
 
+            opened = 0
+
             for i, step in enumerate(path):
-                game.call("pause_menu", {"page": step})
+                if not select_pause_page(game, step, page):
+                    break
+
                 press(game, ["a"], frames[0] if i == len(path) - 1 else settle)
+                opened += 1
+
+            if opened < len(path):
+                for _ in range(opened):
+                    press(game, ["b"], settle)
+
+                continue
 
             if not path:
-                game.call("step", {"frames": frames[0], "clock": "ls", "timeout_s": 120}, 135)
+                game.call("step", {"frames": frames[0], "clock": "ingame", "timeout_s": 120}, 135)
 
             shot(game, game.target_dir, f"pause-{frames[0]:06d}", False)
 
             for prev, frame in zip(frames, frames[1:]):
-                game.call("step", {"frames": frame - prev, "clock": "ls", "timeout_s": 120}, 135)
+                game.call("step", {"frames": frame - prev, "clock": "ingame", "timeout_s": 120}, 135)
                 shot(game, game.target_dir, f"pause-{frame:06d}", False)
 
             for _ in path:
@@ -454,6 +488,23 @@ def change_chain(specs, at, settle=30):
     return shots
 
 
+def boot_run(out, clocks, speed):
+    """The power-on sequence in one launch with no boot target: each {clock: [frames]} entry of the manifest's [boot], in order, held with its own
+    pause_at (a step after a hold lands late on the cutscene clock) and shot as <clock>-<frame>."""
+
+    def body(game):
+
+        enter(game, os.path.join(out, "boot"))
+
+        for clock, frames in clocks.items():
+            for frame in frames:
+                game.call("pause_at", {"clock": clock, "frame": frame, "timeout_s": 240}, 255)
+                shot(game, game.target_dir, f"{clock.replace('.', '_')}-{frame:06d}", False)
+                game.call("resume")
+
+    session(out, {"ROGUESQ_CINE_FASTFWD": "0"}, body, speed)
+
+
 def level_chain(out, ids, frames, speed, pause_pages=(), pause_skip=()):
     """Every level in one launch: each mission is held for its shots, its pause settings pages cycled (pause_settings_cycle), then aborted to SELECT LEVEL
     and the next one started (ROGUESQ_NAV_CHAIN). A level that fails is skipped and the chain relaunched at the one after it."""
@@ -470,7 +521,7 @@ def level_chain(out, ids, frames, speed, pause_pages=(), pause_skip=()):
 
                 # A mission that ends on its own (won or lost) before its shots are done is not a failure: the nav walks its results to the next level.
                 try:
-                    hold(game, "ls", [(f, "", None) for f in frames], True, after_restart=i > 0)
+                    hold(game, "ingame",[(f, "", None) for f in frames], True, after_restart=i > 0)
 
                     if pause_pages:
                         pause_settings_cycle(game, frames[-1] + 30, pause_pages, pause_skip)
@@ -527,18 +578,30 @@ def menu_chain(out, paths, frames, speed, cheats=""):
             for i, path in enumerate(todo):
                 enter(game, os.path.join(out, menu_folder(path)))
 
-                if i == 0:
-                    hold_nav(game, frames, None)
-                else:
-                    current = game.call("setting", {})
+                try:
+                    if i == 0:
+                        hold_nav(game, frames, None)
+                    else:
+                        current = game.call("setting", {})
 
-                    for key, v in snapshot.items():
-                        if current[key]["value"] != v["value"]:
-                            step_setting(game, key, v["value"])
+                        for key, v in snapshot.items():
+                            if current[key]["value"] != v["value"]:
+                                step_setting(game, key, v["value"])
 
-                    after = game.call("frame_info")["restarts"].get("nav", 0)
-                    game.call("nav", {"menu": path})
-                    hold_nav(game, frames, after)
+                        after = game.call("frame_info")["restarts"].get("nav", 0)
+                        game.call("nav", {"menu": path})
+                        hold_nav(game, frames, after)
+                except Exception:
+                    missing = next((line for line in game.log_tail(60).splitlines() if "[nav] stuck: no entry" in line), None)
+
+                    if missing is None:
+                        raise
+
+                    # A page this platform's menu lacks (RAY TRACING without ray queries) is skipped, not failed; the chain relaunches at the next path.
+                    with open(os.path.join(game.target_dir, "skipped.txt"), "a", encoding="utf-8") as f:
+                        f.write(f"menu {path}: not on this platform's menu ({missing.strip()})\n")
+
+                    return
 
                 done.append(path)
 
@@ -625,12 +688,15 @@ def run(args):
         def body(game):
 
             enter(game, os.path.join(out, f"{folder}{level:02d}"))
-            hold(game, "ls", shots, True)
+            hold(game, "ingame",shots, True)
 
             if pause_pages:
                 pause_settings_cycle(game, shots[-1][0] + 30, pause_pages, m["levels"].get("pause_skip", ()))
 
         session(out, {"ROGUESQ_BOOT_TARGET": f"level:{level}"}, body, args.speed, os.path.join(out, "level.rec"))
+
+    if "boot" in sections and wanted("boot"):
+        boot_run(out, m["boot"], args.speed)
 
     # Level 20 (CHICKEN) skips the front end, so it can't be reached from SELECT LEVEL and gets a launch of its own.
     if "levels" in sections:
@@ -688,6 +754,99 @@ def run(args):
                 if wanted(f"perf_level{level:02d}_{preset}"):
                     perf_run(out, level, preset, p["at"], p["seconds"])
 
+    if "memory" in sections:
+        mem = m["memory"]
+
+        if wanted(f"memory_level{mem['level']:02d}"):
+            memory_run(out, mem["level"], mem["loops"], mem["at"], args.speed)
+
+    if "camera" in sections:
+        cam = m["camera"]
+
+        for run_spec in cam["runs"]:
+            if not wanted(f"camera_level{run_spec['level']:02d}_craft{run_spec['craft']:02d}"):
+                continue
+
+            for rate in cam["rates"]:
+                camera_run(out, run_spec["level"], run_spec["craft"], run_spec.get("cheats", ""), run_spec.get("at", cam["at"]), rate, cam, args.speed)
+
+
+def private_bytes(pid):
+    """The process's committed private memory (PrivateUsage), which RT64's GPU allocations count toward too."""
+
+    import ctypes
+    from ctypes import wintypes
+
+    class Counters(ctypes.Structure):
+        _fields_ = [("cb", wintypes.DWORD), ("PageFaultCount", wintypes.DWORD)] + [(n, ctypes.c_size_t) for n in (
+            "PeakWorkingSetSize", "WorkingSetSize", "QuotaPeakPagedPoolUsage", "QuotaPagedPoolUsage", "QuotaPeakNonPagedPoolUsage",
+            "QuotaNonPagedPoolUsage", "PagefileUsage", "PeakPagefileUsage", "PrivateUsage")]
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    handle = kernel32.OpenProcess(0x1000, False, pid)
+
+    if not handle:
+        raise RuntimeError(f"could not open pid {pid}")
+
+    try:
+        c = Counters()
+        c.cb = ctypes.sizeof(c)
+
+        if not kernel32.K32GetProcessMemoryInfo(wintypes.HANDLE(handle), ctypes.byref(c), c.cb):
+            raise RuntimeError(f"GetProcessMemoryInfo failed for pid {pid}")
+
+        return c.PrivateUsage
+    finally:
+        kernel32.CloseHandle(wintypes.HANDLE(handle))
+
+
+def memory_run(out, level, loops, at, speed):
+    """One launch that plays `level` `loops` times through the nav chain, reading the game's private bytes on mission frame `at` of each loop into
+    memory_level<id>/memory.json. A leak shows as growth from loop to loop."""
+
+    # shortcut: Windows only (GetProcessMemoryInfo by pid), add /proc or adb readers when another platform needs it.
+    if platform != "windows":
+        raise SystemExit("the memory section runs on Windows only")
+
+    path = os.path.join(out, f"memory_level{level:02d}", "memory.json")
+
+    def body(game):
+
+        enter(game, os.path.dirname(path))
+        samples = []
+
+        for i in range(loops):
+            game.call("pause_at", {"clock": "ingame", "frame": at, "timeout_s": 240, "next": i > 0}, 255)
+            samples.append(private_bytes(game.proc.pid))
+
+            with open(path, "w") as f:
+                json.dump({"at": at, "private_bytes": samples}, f, indent=1)
+
+            print(f"memory loop {i + 1}/{loops}: {samples[-1] / 2**20:.0f} MB", flush=True)
+            game.call("resume")
+
+            if i + 1 < loops:
+                game.call("nav", {"next_level": level})
+
+    env = {"ROGUESQ_BOOT_TARGET": f"abort:{level}", "ROGUESQ_NAV_CHAIN": "1", "ROGUESQ_LS_EACH_MISSION": "1"}
+    session(out, env, body, speed, os.path.join(out, "memory.rec"))
+
+
+def memory_growth(samples):
+    """Median MB per loop that private bytes grow from the third loop on (the first two fill caches), or None below four loops.
+    A leak grows every loop; the GPU allocator keeping a block it added (~64 MB, once, on the hangar visit that outgrows its blocks) is one step and leaves the median alone."""
+
+    steps = sorted(b - a for a, b in zip(samples[2:], samples[3:]))
+
+    if not steps:
+        return None
+
+    mid = len(steps) // 2
+    median = steps[mid] if len(steps) % 2 else (steps[mid - 1] + steps[mid]) / 2
+
+    return median / 2**20
+
 
 def perf_run(out, level, preset, at, seconds):
     """One real-speed launch with a repo video preset merged over the pinned profile: held on mission frame `at` to line the runs up, then run `seconds` and RT64's last
@@ -714,6 +873,83 @@ def perf_run(out, level, preset, at, seconds):
     session(out, {"ROGUESQ_BOOT_TARGET": f"level:{level}", "ROGUESQ_FIXED_STEP": "0"}, body, 1, settings=settings)
 
 
+PLAYER_POS = 0x80137DC0
+
+
+def camera_distance(game):
+    """Distance from the drawn camera's world position to player 1's craft, and the craft's position."""
+
+    cam = struct.unpack(">I", read(game, CAMERA_PTR, 4))[0]
+
+    if not ptr_ok(cam):
+        return None, None
+
+    c = struct.unpack(">3f", read(game, cam + 0x4C, 12))
+    p = struct.unpack(">3f", read(game, PLAYER_POS, 12))
+
+    return sum((a - b) ** 2 for a, b in zip(c, p)) ** 0.5, p
+
+
+def camera_run(out, level, craft, cheats, at, rate, spec, speed):
+    """One launch of `craft` on `level` with the game logic at `rate` fps: from mission second `at`, each phase {name, buttons, seconds} holds its buttons
+    and samples the camera-to-craft distance ten times a game second; the samples of its last spec["settle"] seconds are kept. Results for each rate are merged
+    into camera_level<id>_craft<id>/camera.json, so the 30 and 240 fps runs can be compared."""
+
+    path = os.path.join(out, f"camera_level{level:02d}_craft{craft:02d}", "camera.json")
+
+    def body(game):
+
+        enter(game, os.path.dirname(path))
+        game.call("pause_at", {"clock": "mission", "frame": round(at * rate), "timeout_s": 240}, 255)
+        chunk = max(1, rate // 10)
+        result = {}
+
+        for phase in spec["phases"]:
+            name, buttons, seconds = phase["name"], phase["buttons"], phase["seconds"]
+
+            if buttons:
+                game.call("press", {"buttons": buttons, "frames": 0})
+
+            samples = []
+            craft = []
+            steps = round(seconds * rate / chunk)
+            keep = round(spec["settle"] * rate / chunk)
+
+            for i in range(steps):
+                game.call("step", {"frames": chunk, "clock": "mission", "timeout_s": 120}, 135)
+
+                if i >= steps - keep:
+                    distance, pos = camera_distance(game)
+
+                    if distance is not None:
+                        samples.append(distance)
+                        craft.append(pos)
+
+            if buttons:
+                game.call("release")
+
+            # A craft that stops moving has left flight (a level's end sequence frames it with its own camera), so the phase measures nothing.
+            if len(set(craft)) <= 1:
+                result[name] = None
+                continue
+
+            result[name] = {"mean": sum(samples) / len(samples), "min": min(samples), "max": max(samples)}
+
+        data = load_json(path) if os.path.exists(path) else {}
+        data[str(rate)] = result
+
+        with open(path, "w") as f:
+            json.dump(data, f, indent=1)
+
+    # The fresh pilot's hangar does not show every craft the level approves, so the boot takes the level's own craft and the mission flies the forced one.
+    env = {"ROGUESQ_BOOT_TARGET": f"level:{level}", "ROGUESQ_FORCE_CRAFT": str(craft)}
+
+    if cheats:
+        env["ROGUESQ_CHEATS"] = cheats
+
+    session(out, env, body, speed, settings={"targetFramerate": rate, "frameInterpolation": False})
+
+
 def image_diff(a, b, diff_path=None):
 
     ia = Image.open(a).convert("RGB")
@@ -735,9 +971,10 @@ def image_diff(a, b, diff_path=None):
 
 
 # Per target kind: the most pixels (percent) that may change by more than PIXEL_DELTA (None = not compared), and the sidecar fields that must match.
-# Missions and pause pages (fixed step, ls clock) and menus (ROGUESQ_MENU_FIXED, nav clock) match exactly. Cutscenes match except animated water and
+# Missions and pause pages (fixed step, ingame clock) and menus (ROGUESQ_MENU_FIXED, nav clock) match exactly. Cutscenes match except animated water and
 # ground textures and subtitles, which follow the voice stream (measured up to 15%), so their limit only catches a wrong camera, scene or model.
 RULES = {
+    "boot": (0.05, ["state"]),
     "level": (0.05, ["state", "player", "camera", "wingmen", "npcs"]),
     "changes": (0.05, ["state", "player", "camera", "wingmen", "npcs"]),
     "cutscene": (20, ["state"]),
@@ -749,6 +986,10 @@ RULES = {
 STAT_FIELDS = ["player", "camera", "wingmen", "npcs"]
 # A preset whose average frame time grew by more than this fraction fails.
 PERF_SLOWER = 0.15
+# A memory run whose private bytes grow by more than this per replay of its level (the median, memory_growth) fails.
+MEMORY_GROWTH_MB = 16
+# A craft's chase camera fails when its mean distance in a phase at any frame rate differs from the 30 fps run's by more than this fraction.
+CAMERA_SPREAD = 0.05
 
 
 def load_json(path):
@@ -810,7 +1051,7 @@ def compare(args):
             pct = None
 
             if not os.path.exists(other):
-                problems.append("missing")
+                problems.append("not in this run, only in the baseline")
             else:
                 pct = image_diff(os.path.join(base, rel), other, os.path.join(cur, "_diff", rel))
 
@@ -825,6 +1066,15 @@ def compare(args):
                 problems.append(leaks[rel])
 
             rows.append((rel, pct, problems))
+
+    for root, dirs, files in os.walk(cur):
+        dirs[:] = [d for d in dirs if not d.startswith("_")]
+
+        for name in sorted(files):
+            rel = os.path.relpath(os.path.join(root, name), cur)
+
+            if name.endswith(".png") and not os.path.exists(os.path.join(base, rel)):
+                rows.append((rel, None, ["new, not in the baseline"]))
 
     for root, _, files in os.walk(cur):
         for name in ("error.txt", "faults.txt"):
@@ -846,6 +1096,54 @@ def compare(args):
         slower = after > before * (1 + PERF_SLOWER)
         rows.append((f"{rel} ({1000 / before:.0f} -> {1000 / after:.0f} fps)", None, [f"frame time +{after / before - 1:.0%}"] if slower else []))
 
+    # The baseline's growth is shown alongside.
+    for root, _, files in os.walk(cur):
+        if "memory.json" not in files:
+            continue
+
+        rel = os.path.relpath(os.path.join(root, "memory.json"), cur)
+
+        def growth(path):
+            return memory_growth(load_json(path)["private_bytes"]) if os.path.exists(path) else None
+
+        after = growth(os.path.join(cur, rel))
+        before = growth(os.path.join(base, rel))
+
+        if after is None:
+            rows.append((rel, None, ["too few loops"]))
+            continue
+
+        was = f"{before:+.1f} -> " if before is not None else ""
+        rows.append((f"{rel} ({was}{after:+.1f} MB/loop)", None, [f"grows {after:.1f} MB per loop"] if after > MEMORY_GROWTH_MB else []))
+
+    # The chase camera is judged within the current run: each frame rate against the 30 fps run of the same craft.
+    for root, _, files in os.walk(cur):
+        if "camera.json" not in files:
+            continue
+
+        rel = os.path.relpath(os.path.join(root, "camera.json"), cur)
+        data = load_json(os.path.join(cur, rel))
+        ref = data.get("30")
+        problems = []
+        cells = []
+
+        if not ref:
+            rows.append((rel, None, ["no 30 fps run"]))
+            continue
+
+        for rate, phases in sorted(data.items(), key=lambda kv: int(kv[0])):
+            for name, r in phases.items():
+                if r is None or ref.get(name) is None:
+                    problems.append(f"{rate} fps {name}: craft stopped, no flight to measure")
+                    continue
+
+                cells.append(f"{name}@{rate} {r['mean']:.2f}")
+
+                if abs(r["mean"] / ref[name]["mean"] - 1) > CAMERA_SPREAD:
+                    problems.append(f"{rate} fps {name} {r['mean']:.2f} vs {ref[name]['mean']:.2f} at 30")
+
+        rows.append((f"{rel} ({', '.join(cells)})", None, problems))
+
     failed = 0
 
     for rel, pct, problems in rows:
@@ -859,36 +1157,37 @@ def compare(args):
 
 
 def report(cur, base, rows):
+    """Writes the rows to results.js next to a copy of the report page (tools/debug/smoke/report), which builds itself from them."""
 
-    def ft(path):
+    def frame_time(path):
 
-        if not os.path.exists(path):
-            return ""
+        t = load_json(path).get("frame_times", {}).get("present") if os.path.exists(path) else None
 
-        t = load_json(path).get("frame_times", {}).get("present")
-
-        return f"{1000.0 / t['avg']:.0f} fps (p99 {t['p99']:.1f} ms)" if t and t.get("avg") else ""
+        return t if t and t.get("avg") else None
 
     rel_base = os.path.relpath(base, cur).replace("\\", "/")
-    lines = [
-        "<!doctype html><meta charset=utf-8><title>Smoke report</title>",
-        "<style>body{font:14px sans-serif;background:#111;color:#ddd}img{width:32%;margin:2px}.f{color:#f66}.o{color:#6c6}</style>",
-        f"<h1>Smoke report</h1><p>{sum(bool(r[2]) for r in rows)} of {len(rows)} failed. Baseline, current, changed pixels (magenta). FPS is meaningful only at --speed 1.</p>",
-    ]
+    results = []
 
-    for rel, pct, problems in sorted(rows, key=lambda r: (not r[2], r[0])):
+    for rel, pct, problems in rows:
         url = rel.replace("\\", "/")
-        status = f"<span class=f>FAIL: {html.escape('; '.join(problems))}</span>" if problems else "<span class=o>ok</span>"
-        lines.append(f"<h3>{html.escape(url)} {status}</h3>")
+        row = {"name": url, "pct": pct, "problems": problems}
 
         if url.endswith(".png"):
-            fps = ft(os.path.join(cur, rel[:-4] + ".json"))
-            lines.append(f"<p>{f'{pct:.3f}% pixels changed' if pct is not None else ''} {fps}</p>")
-            diff = f"<img src='_diff/{url}'>" if os.path.exists(os.path.join(cur, "_diff", rel)) else ""
-            lines.append(f"<img src='{rel_base}/{url}'><img src='{url}'>{diff}")
+            t = frame_time(os.path.join(cur, rel[:-4] + ".json"))
+            row["baseline"] = f"{rel_base}/{url}" if os.path.exists(os.path.join(base, rel)) else None
+            row["current"] = url if os.path.exists(os.path.join(cur, rel)) else None
+            row["diff"] = f"_diff/{url}" if os.path.exists(os.path.join(cur, "_diff", rel)) else None
+            row["frame_ms"] = t and {"avg": t["avg"], "p99": t["p99"]}
 
-    with open(os.path.join(cur, "report.html"), "w", encoding="utf-8") as f:
-        f.write("\n".join(lines))
+        results.append(row)
+
+    data = {"platform": os.path.basename(cur), "tag": os.path.basename(os.path.dirname(cur)), "made": time.strftime("%Y-%m-%d %H:%M"), "rows": results}
+
+    with open(os.path.join(cur, "results.js"), "w", encoding="utf-8") as f:
+        f.write("window.SMOKE_RESULTS = " + json.dumps(data) + ";\n")
+
+    for name in ("report.html", "report.css", "report.js"):
+        shutil.copy(os.path.join(HERE, "report", name), os.path.join(cur, name))
 
 
 def main():
@@ -934,6 +1233,14 @@ def main():
             run(args)
         else:
             failed += compare(args)
+
+    # The report's platform picker lists every platform of this tag that has a report, not only the ones just compared.
+    if args.cmd == "compare":
+        tag_dir = os.path.join(OUT, args.tag)
+        compared = sorted(p for p in os.listdir(tag_dir) if os.path.exists(os.path.join(tag_dir, p, "results.js")))
+
+        with open(os.path.join(tag_dir, "platforms.js"), "w", encoding="utf-8") as f:
+            f.write("window.SMOKE_PLATFORMS = " + json.dumps(compared) + ";\n")
 
     sys.exit(1 if failed else 0)
 

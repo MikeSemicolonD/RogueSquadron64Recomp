@@ -49,11 +49,13 @@ Stop only the process you launched, by PID or the MCP `close`. Never stop the ga
 
 For a headless run that drives past the title without a controller, pass `--fake-controller --auto-start <ms>` (or the env vars `ROGUESQ_FAKE_CONTROLLER=1` / `ROGUESQ_AUTO_START=<ms>`).
 
-**Test against a mission recording in Release at `ROGUESQ_SPEED=16`, reading the log, whenever the check is a log or counter** (pairing rates, light/terrain traces, hashes): the 3126-frame `construction_yards_bonus.rec` runs from launch to exit in under a minute (`ROGUESQ_BOOT_TARGET=level:<id>,<craft>` from the `.rec` header, `ROGUESQ_LS_REPLAY`, `ROGUESQ_FAKE_CONTROLLER=1`, the trace vars, stderr redirected to a file under `dumps/`; the game exits when the replay ends). Debug is about 10x slower per frame. Use the Debug MCP session only when a frozen frame has to be inspected. Session recordings (`rs64-input`) diverge; use mission (`rs64-ls`) recordings.
+**Test against a mission recording in Release at `ROGUESQ_SPEED=16`, reading the log, whenever the check is a log or counter** (pairing rates, light/terrain traces, hashes): the 2393-frame `beggars_canyon_20261119_200217.rec` runs from launch to exit in under a minute (`ROGUESQ_BOOT_TARGET=level:<id>,<craft>` from the `.rec` header, `ROGUESQ_LS_REPLAY`, `ROGUESQ_FAKE_CONTROLLER=1`, the trace vars, stderr redirected to a file under `dumps/`; the game exits when the replay ends). Debug is about 10x slower per frame. Use the Debug MCP session only when a frozen frame has to be inspected.
 
-**Keep one test session on one configuration.** Don't pair a Release instance with a Debug one (a Release co-op host with a Debug MCP client, say), and don't switch configs mid-session: their staged mods, saves and speeds differ. Use Debug only when it has something the test needs that Release lacks.
+**Keep one test session on one configuration.** Don't pair a Release instance with a Debug one (a Release co-op host with a Debug MCP client, say), and don't switch configs mid-session: their staged mods, saves and speeds differ. Use Debug only when it has something the test needs that Release lacks. MCP instance `p2` is for co-op tests; single-player tests use `p1`.
 
 Unit tests: `cmake --build build --config Release --target rs64_unit_tests` builds and runs the host, multiplayer-mod and relay-server tests plus `style_check`. They are defined in `tests/CMakeLists.txt` (the mod's in `mods/multiplayer-native/tests/`, the relay's in `relay-server/tests/`), which also configures on its own with only the submodules: `cmake -S tests -B build-tests`. `touch_input_test`, `video_config_test`, `transition_gate_test`, `input_bindings_test` and `fault_guard_test` are separate `EXCLUDE_FROM_ALL` targets.
+
+**Before committing code that could change frame rate, memory or game behaviour**, run the unit tests above, then `python -I tools/debug/smoke/smoke.py run --tag current --sections perf,memory --filter perf_level03_ultra,memory_level03` and `smoke.py compare --tag current`. Its `perf_level03_ultra` and `memory_level03` lines must read `ok`; ignore the "missing" rows. Delete `dumps/smoke/current` after. Docs, comments and small tool-only changes skip the smoke run.
 
 ## Overriding recompiled functions
 
@@ -82,6 +84,8 @@ A mod not listed in `mods/platforms.json` ships nowhere, and a new code mod's `.
    - `Unable to find a matching GBI in the current database` — unrecognized ucode task; the mid-task NULL guard catches the resulting deref, that geometry doesn't render.
 3. **Rerun with the gfx traces**: `ROGUESQ_LOG_GFX_TASK=1` (one line per graphics task), `ROGUESQ_LOG_DL_HEALTH=1` (garbage color-image rejects, a desync signal) and `ROGUESQ_DESYNC_TRACE=1` (recent F5 commands ring) show which DL was in flight.
 4. **Use `tools/debug/reconstruct-freeze.py` on a full dump** to validate queue-level theories before instrumenting: it lists every blocked game thread and its wait queue. `tools/debug/host-stacks.py` gives the symbolized host stacks.
+
+For rendering that is wrong on one GPU or driver only (Pi v3dv, Android, a WSL or browser backend), run once with `VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation` and `VK_KHRONOS_VALIDATION_VALIDATE_SYNC=true` before guessing, and fix every error: an over-limit layout or an unblendable target renders garbage with no crash.
 
 For a hang, or a recompiled function that faults on data that decodes fine offline, suspect a codegen mistranslation of a rare instruction on that path (the voice-freeze cause was the `*al` link-branches) before deep subsystem RE.
 
@@ -158,7 +162,7 @@ For a bug that shows up only in Release (or only when the host is fast), suspect
       fprintf(stderr, "[perf] ANativeWindow_setFrameRate = %d\n", rc);
   }
   ```
-  A comment that follows a statement starts a new step, so it gets a blank line above it; so does a log line (`fprintf`) after a non-log statement, and a multi-line statement ending in `};` (a lambda, struct or initializer) gets one before and after it.
+  A comment that follows a statement starts a new step, so it gets a blank line above it, and in a struct or class a comment after a member starts a new group of members the same way (`style_check` enforces this one); so does a log line (`fprintf`) after a non-log statement, and a multi-line statement ending in `};` (a lambda, struct or initializer) gets one before and after it.
   Preprocessor conditionals follow the same rule: a blank line before `#if` and after `#endif`, including between two conditionals in a row. A branch that holds more than a one-line statement (and its comment) also gets a blank line after its `#if`/`#elif`/`#else` and before the next directive, on both sides; a one-line branch stays tight:
   ```cpp
   #if defined(__linux__) && !defined(__ANDROID__)
@@ -216,7 +220,7 @@ Read the linked doc before working in that area.
 - **Where code lives**: [docs/engine/project-layout.md](docs/engine/project-layout.md). The forks under `lib/` carry intentional `if(false) fprintf(...)` toggles and game-specific guards: don't propose stripping them.
 - **Test, validation and RE tools**: [docs/engine/debug-tools.md](docs/engine/debug-tools.md). Never time a screenshot by wall clock: hold an exact frame, then capture the window by PID. Trace callers and globals with `tools/re/rz/rzq.py` before grepping `RecompiledFuncs/`.
 - **Crash and hang dumps**: [docs/engine/debugging-with-visual-studio.md](docs/engine/debugging-with-visual-studio.md#crashes-and-hangs).
-- **Live frames**: [docs/engine/rt64-mcp.md](docs/engine/rt64-mcp.md). Use it instead of asking the user for F1 screenshots.
+- **Live frames**: [docs/engine/rt64-mcp.md](docs/engine/rt64-mcp.md). Use it instead of asking the user for F1 screenshots. For a visual glitch, hold the frame and `renderdoc_capture` it before tracing CPU code.
 - **Factor 5 display lists**: [docs/reference/factor5-gbi.md](docs/reference/factor5-gbi.md) (opcodes) and [docs/reference/f5-model-dl-spec.md](docs/reference/f5-model-dl-spec.md) (grammar).
 - **Co-op**: [docs/guides/multiplayer.md](docs/guides/multiplayer.md). The mod reaches the game only through `mp_host.h`, and a new base-side need is a flag or table entry, never a direct call. Host code reads the relocated per-player arrays through `rs64::ls::relocated()`.
 - **Engine internals**: [docs/reference/game-architecture.md](docs/reference/game-architecture.md) (overlays, host RAM, state model, frame pacing, audio, scheduler queues, exception handling). Rules from it:

@@ -37,7 +37,8 @@
     {bit:0x00001000,name:"Adv. torpedoes",desc:"Advanced proton torpedoes: the stronger torpedo power-up"},
     {bit:0x00002000,name:"Seeker torpedoes",desc:"Seeker proton torpedoes: torpedoes that home in on a target"},
     {bit:0x00004000,name:"Seeker cluster",desc:"Seeker cluster missiles: a spread of homing missiles"},
-    {bit:0x00008000,name:"Adv. bombs",desc:"Advanced bombs: the stronger bomb power-up"}
+    {bit:0x00008000,name:"Adv. bombs",desc:"Advanced bombs: the stronger bomb power-up"},
+    {bit:0x00010000,name:"Adv. shields",desc:"Advanced shields: stronger deflector shields, The Jade Moon's power-up"}
   ];
 
   // Cheat flags -> save cheatCodeFlags[0] (body +0x08). Bit map confirmed in cheat_codes.md.

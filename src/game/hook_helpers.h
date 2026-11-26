@@ -20,6 +20,10 @@ extern "C" {
     void rs64_neutralize_matpool_cimg(uint8_t* rdram, uint32_t dl_phys);
     // DRAW DISTANCE multiplier the culls use (setting or ROGUESQ_DRAW_DIST, capped for the legacy terrain).
     float rs64_draw_dist_setting(void);
+    // The mod ship flying as the craft ("" for a stock craft), and making one fly (0 when no enabled mod has it).
+    const char* rs64_ships_flying_id(void);
+    int rs64_ships_fly(const char* id);
+    int rs64_ships_count(void);
 }
 
 #endif // RS64_HOOK_HELPERS_H

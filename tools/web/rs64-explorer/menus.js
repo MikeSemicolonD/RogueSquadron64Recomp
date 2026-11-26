@@ -202,7 +202,7 @@ async function showMenu(name)
   const page = !native && menuPagesOf(doc).find((b) => b.page === name);
   const full = menuWithDefaults(doc);
   const langMenu = await readJson(LANG_MENU, () => ({}));
-  const { rows, dropped } = menuLayout(full, name, native?.entries ?? [], () => true, native?.max ?? 7);
+  const { rows, dropped } = menuLayout(full, name, native?.entries ?? [], () => true, native?.max ?? 11);
   const groups = await readJson(EXPORT_GROUPS, () => ({ groups: [], assign: {} }));
 
   // Toolbar: import, preview language, the group new buttons go in, add a button.
@@ -478,7 +478,7 @@ async function showMenu(name)
 
   // Slots used at the toolbar's end; what to do is its tooltip.
   const used = rows.length + dropped.length + (page ? 1 : 0);
-  const max = (native?.max ?? 7) + (page ? 1 : 0);
+  const max = (native?.max ?? 11) + (page ? 1 : 0);
   const hint = native?.locked ?? native?.note ?? (dropped.length ? `The game cuts ${dropped.length} entr${dropped.length > 1 ? 'ies' : 'y'} (struck through, below): hide or replace one of the game's entries to make room.`
     : (name === 'pause' ? 'Objective lines are placeholders. ' + 'Click a button to edit it.' : 'Click a button to edit it, or one of the game\'s entries to hide or replace it.'));
 

@@ -1,0 +1,80 @@
+{
+  "$schema": "https://recomplauncher.com/schema/recomplauncher.json",
+  "format": 1,
+  "name": "Rogue Squadron 64 Recompiled",
+  "repo": "MikeSemicolonD/RogueSquadron64Recomp",
+  "game": {
+    "kind": "iso",
+    "label": "Your Star Wars: Rogue Squadron N64 ROM, USA v1.0 (NRSE): .z64, .n64 or .v64.",
+    "check": { "ids": ["NRSE"] }
+  },
+  "start": {
+    "program": ["RogueSquadron64Recomp.exe", "run.sh"],
+    "args": ["--rom", "{game}"]
+  },
+  "system": {
+    "windows": { "version": "10" }
+  },
+  "config": [
+    { "id": "main", "format": "json", "file": [{ "path": "{install}/roguesq_video.json" }] }
+  ],
+  "settings": [
+    {
+      "id": "fullscreen", "label": "Window mode", "group": "Display",
+      "help": "Also Alt+Enter in the game.",
+      "choices": [
+        { "label": "Windowed", "set": { "fullscreen": "false" } },
+        { "label": "Fullscreen", "set": { "fullscreen": "true" } }
+      ],
+      "defaults": { "fullscreen": "false" }
+    },
+    {
+      "id": "widescreen", "label": "Widescreen", "group": "Display",
+      "choices": [
+        { "label": "On", "set": { "widescreen": "true" } },
+        { "label": "Off (4:3)", "set": { "widescreen": "false" } }
+      ],
+      "defaults": { "widescreen": "true" }
+    },
+    {
+      "id": "interp", "label": "Smooth motion", "group": "Performance",
+      "help": "Draws frames between the game's own 30 per second.",
+      "choices": [
+        { "label": "On", "set": { "frameInterpolation": "true" } },
+        { "label": "Off", "set": { "frameInterpolation": "false" } }
+      ],
+      "defaults": { "frameInterpolation": "true" }
+    },
+    {
+      "id": "rt", "label": "Ray-traced lights", "group": "Display",
+      "choices": [
+        { "label": "On", "set": { "rayTracing/lights": "true" } },
+        { "label": "Off", "set": { "rayTracing/lights": "false" } }
+      ],
+      "defaults": { "rayTracing/lights": "true" }
+    },
+    {
+      "id": "draw_distance", "label": "Draw distance", "group": "Display",
+      "slider": { "key": "drawDistance", "min": 0.25, "max": 8, "step": 0.25, "format": "%.2f" },
+      "defaults": { "drawDistance": "1" }
+    },
+    {
+      "id": "language", "label": "Language", "group": "Gameplay",
+      "choices": [
+        { "label": "English", "set": { "language": "\"en\"" } },
+        { "label": "Deutsch", "set": { "language": "\"de\"" } },
+        { "label": "Francais", "set": { "language": "\"fr\"" } }
+      ],
+      "defaults": { "language": "\"en\"" }
+    }
+  ],
+  "saves": ["{install}/saves", "{install}/roguesq_*.json"],
+  "folders": {
+    "saves": [{ "path": "{install}/saves" }],
+    "logs": [{ "path": "{install}/logs" }]
+  },
+  "actions": [
+    { "id": "open_saves", "label": "Saves", "help": "The folder with your save file.", "open": "saves" },
+    { "id": "open_logs", "label": "Logs", "help": "Logs to attach to a bug report.", "open": "logs" }
+  ]
+}

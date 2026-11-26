@@ -2,6 +2,13 @@
 # each changes group in one launch per level, menus in one launch. Frames are on the entry's clock: mission frames for levels, display lists after the
 # menu path is done for menus, the cutscene clock for cutscenes.
 
+# The power-on sequence as a player sees it, in one fixed-step launch with no boot target and no fast-forward: frames on each state's own clock, held with
+# pause_at one at a time. Attribution runs ~120 frames, the intro cutscene (level 19 special) 1200, then the main menu.
+[boot]
+attribution = [30, 90]
+cutscene = [60, 200, 350, 500, 650, 800, 950, 1100]
+"menu.main" = [30]
+
 [levels]
 # 19 is the front end's map, not a mission.
 ids = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20]
@@ -38,7 +45,7 @@ sim = ["draw_distance", "legacy_terrain", "target_fps"]
 [menus]
 frames = [20, 60, 200]
 # DIRECTOR (OPTIONS shows SHOWROOM) and MAESTRO (its CONCERT HALL opens).
-cheats = "0x180000"
+cheats = "DIRECTOR,MAESTRO"
 paths = [
   "OPTIONS",
   "OPTIONS/GAME SETTINGS",
@@ -83,15 +90,48 @@ presets = ["low", "medium", "high", "ultra", "original"]
 at = 300
 seconds = 15
 
-# With cheats, one launch sets those unlock bits (ROGUESQ_CHEATS; 0x100000 = DIRECTOR, which adds SHOWROOM to OPTIONS), opens viewer_path (AT THE MOVIES,
-# row 1 of the hub, whose labels the nav can't read, plays them all in a row) and shoots each cutscene, named cutscene_seq_NN by their order; ids are then unused. Without cheats, each id (<level>,<kind>: kind 0
+# With cheats, one launch enters those passcodes (ROGUESQ_CHEATS; DIRECTOR adds SHOWROOM to OPTIONS), opens viewer_path (AT THE MOVIES, which
+# plays them all in a row) and shoots each cutscene, named cutscene_seq_NN by their order; ids are then unused. Without cheats, each id (<level>,<kind>: kind 0
 # intro, 1 outro for levels 0-15; 3,2 epilogue; 19,2 boot intro) gets one launch per frame.
 [cutscenes]
-cheats = "0x100000"
+cheats = "DIRECTOR"
 viewer_path = "OPTIONS/SHOWROOM/#1"
 frames = [60, 300]
 ids = [
   "0,0", "0,1", "1,0", "1,1", "2,0", "2,1", "3,0", "3,1", "4,0", "4,1", "5,0", "5,1", "6,0", "6,1", "7,0", "7,1",
   "8,0", "8,1", "9,0", "9,1", "10,0", "10,1", "11,0", "11,1", "12,0", "12,1", "13,0", "13,1", "14,0", "14,1", "15,0", "15,1",
   "3,2", "19,2",
+]
+
+# Memory leaks: one fixed-step launch plays `level` `loops` times through the nav chain and reads the game's private bytes on mission frame `at` of each loop
+# into memory.json. Compare fails a run whose median growth per loop from the third loop on is over MEMORY_GROWTH_MB (the first two fill caches, and the median passes the one ~64 MB step level 3 takes when the GPU allocator adds a block, on loop 3 or 4). Windows only.
+[memory]
+level = 3
+loops = 6
+at = 300
+
+# Chase camera at each frame rate: per run, one fixed-step launch per rate (interpolation off) flies the craft from mission second `at` through the phases,
+# holding each phase's buttons (a = boost, z = brake) and sampling the camera-to-craft distance over its last `settle` seconds into camera.json. Compare fails a
+# craft whose mean distance in a phase differs from its 30 fps run by more than CAMERA_SPREAD. Each craft flies a level it is approved for, with the passcode
+# that unlocks it (FARMBOY Falcon, TIEDUP TIE, WOMPRAT! Beggar's Canyon for the T-16, HALIFAX? the Naboo starfighter). A run's own `at` overrides the shared one:
+# at full boost the T-16 reaches Beggar's Canyon's end sequence about 16 s in, which freezes the craft. A phase whose craft stops moving fails.
+[camera]
+rates = [30, 240]
+at = 10.0
+settle = 1.0
+phases = [
+  { name = "cruise", buttons = [], seconds = 2.0 },
+  { name = "boost", buttons = ["a"], seconds = 3.0 },
+  { name = "brake", buttons = ["z"], seconds = 3.0 },
+]
+runs = [
+  { level = 15, craft = 0 },
+  { level = 13, craft = 1 },
+  { level = 15, craft = 2 },
+  { level = 15, craft = 3 },
+  { level = 3, craft = 4 },
+  { level = 15, craft = 5, cheats = "FARMBOY" },
+  { level = 15, craft = 6, cheats = "TIEDUP" },
+  { level = 16, craft = 7, cheats = "WOMPRAT!", at = 6.0 },
+  { level = 15, craft = 8, cheats = "HALIFAX?" },
 ]

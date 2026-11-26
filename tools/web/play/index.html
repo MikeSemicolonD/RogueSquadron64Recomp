@@ -233,6 +233,24 @@ document.addEventListener('paste', e => {
   e.preventDefault();
 });
 
+// GYRO STEERING on a phone: the page's motion events stand in for the sensors the game reads on Android. iOS asks for permission on a tap.
+const DEG = Math.PI / 180;
+
+window.addEventListener('devicemotion', e => {
+  const g = e.accelerationIncludingGravity;
+  const r = e.rotationRate;
+
+  if (!mainRan || !g || !r || g.x === null || !Module._rs64_web_motion)
+    return;
+
+  const flipped = screen.orientation && screen.orientation.angle === 270 ? 1 : 0;
+
+  Module._rs64_web_motion(g.x, g.y, g.z, (r.gamma || 0) * DEG, (r.alpha || 0) * DEG, flipped);
+});
+
+if (typeof DeviceMotionEvent !== 'undefined' && DeviceMotionEvent.requestPermission)
+  document.addEventListener('pointerdown', () => DeviceMotionEvent.requestPermission().catch(() => {}), { once: true });
+
 document.addEventListener('pointerlockchange', () => {
   if (Module._rs64_web_pointer_lock_changed)
     Module._rs64_web_pointer_lock_changed(document.pointerLockElement === canvas ? 1 : 0);

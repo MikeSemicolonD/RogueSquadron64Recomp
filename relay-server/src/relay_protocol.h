@@ -67,6 +67,7 @@ struct GameEntry {
 
 struct ListReply {
     std::string server;
+
     // Waiting games of the asked build, including any past the kListMax listed.
     uint16_t total = 0;
     std::vector<GameEntry> games;

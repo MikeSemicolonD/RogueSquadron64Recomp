@@ -10,22 +10,31 @@ Register it in the repo's `.mcp.json` (gitignored, per machine):
 "rs64": { "type": "stdio", "command": "python", "args": ["tools/debug/mcp/rs64_mcp.py"] }
 ```
 
-`python tools/debug/mcp/rs64_mcp.py --self-test` launches the Debug build and checks the bridge end to end.
+`python tools/debug/mcp/rs64_mcp.py --self-test` launches the Debug build and checks the bridge end to end. `--self-test-pair` launches a co-op pair and checks that each holds and steps on its own. `--config <dir>` picks another `build/<dir>`.
 
-Outputs (the game's stdout/stderr, dumps, screenshots) go to `dumps/mcp/<session>/`; RenderDoc captures to `dumps/RenderDoc/mcp-<session>/`.
+The server also runs on Linux against a Linux build (`python3 tools/debug/mcp/rs64_mcp.py --self-test --config <dir>`). There, `hang_dump` and `type_text` are Windows-only and RenderDoc is not injected.
+
+Outputs (the game's stdout/stderr, dumps, screenshots) go to `dumps/mcp/<session>_<instance>/`; RenderDoc captures to `dumps/RenderDoc/mcp-<session>_<instance>/`.
+
+## Two games at once
+
+Every tool takes `instance` (default `p1`), the game it acts on. A game launched while another runs gets its own copy of the game folder (ROM, configs, mods, saves) in `<session>/work` and must use the same `config`.
+
+`launch(coop="host", instance="p1")` and then `launch(coop="join", instance="p2")` start a scripted co-op pair on this machine (host window left, join right). Wait for `wait_log("\\[ghost\\] peer in mission")` on both before pausing either: a hold during the mission-start handshake drops the other game to solo after 10 s. After that, either game can be held or stepped alone; the other one's puppet just stops moving.
 
 ## Tools
 
 | Tool | What it does |
 | --- | --- |
-| `launch` | Start the game (cwd `build/<config>`, RenderDoc injected, muted, dev mode) and connect. `env` adds `ROGUESQ_*` variables. Refuses while its game is still running. |
+| `launch` | Start the game (cwd `build/<config>`, RenderDoc injected, muted, dev mode) and connect. `env` adds `ROGUESQ_*` variables; `coop` is `host` or `join`. Refuses while its game is still running. |
 | `attach` | Connect to a game the user started (a Debug build serves the bridge on port 47064). Everything but `wait_log` works; `close` only disconnects. |
 | `close` | Kill the game (an attached one is only disconnected). |
-| `status` | `running`, `state` (the game state, e.g. `menu.main`, `cutscene`, `attract.demo`), `held`, `pid`, `port`, `exit_code`, `log_path`, `session_dir`. |
+| `status` | `instance`, `running`, `state` (the game state, e.g. `menu.main`, `cutscene`, `attract.demo`), `held`, `pid`, `port`, `exit_code`, `log_path`, `session_dir`. |
 | `call` | Send any bridge method directly. |
 | `pause_at` | Freeze the game and the picture on exactly frame `frame` of `clock` (game state id, `cutscene`, `crawl`, or `dl` = display lists since boot). Errors at once if the shown state's clock is already past `frame`. |
 | `pause_now` | Freeze on the next frame, whatever is on screen. |
 | `step` / `resume` | From a freeze, run `frames` more and re-freeze / let it run. |
+| `speed` | Game clock speed while running, 1/16 to 16 (`pause_at(speed=16)` runs fast only while it waits). |
 | `pause_when` | Freeze when an RDRAM value changes or meets eq/ne/gt/lt (checked once a frame). A state change is `pause_at(<state>, 0)`. |
 | `pause_when_drawn` | Freeze once a model part or effect sprite is on screen, by light-preset key prefix (`r_pow`, `xwing#s0.p4`, `spr:explo_tex`; `\|` separates several). One or two frames after it first shows. |
 | `wait_log` | Wait for a regex in the game's log (e.g. `SEH caught\|null-call\|Assertion`). A line already printed fails at once; `repeat=true` waits for another. |

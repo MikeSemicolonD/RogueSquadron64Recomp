@@ -489,6 +489,31 @@ static void test_custom_aa_steps_to_fxaa() {
     CHECK(rs64::video::aa_preset(uc) == 1);
 }
 
+// A demo interpolates with interpolation off, and the menu copy and the saved setting stay off.
+static void test_demo_interpolation() {
+
+    UC uc;
+
+    uc.validate();
+    uc.refreshRate = UC::RefreshRate::Original;
+    rs64::video::apply_pending(uc);
+
+    CHECK(rs64::video::apply_pending(uc, true).changed);
+    CHECK(uc.refreshRate != UC::RefreshRate::Original);
+    CHECK(rs64::video::demo_interpolating());
+    CHECK(!rs64::video::apply_pending(uc, true).changed);
+    CHECK(!rs64::video::frame_interpolation_on());
+
+    CHECK(rs64::video::apply_pending(uc, false).changed);
+    CHECK(uc.refreshRate == UC::RefreshRate::Original);
+    CHECK(!rs64::video::demo_interpolating());
+
+    uc.refreshRate = UC::RefreshRate::Manual;
+    rs64::video::apply_pending(uc);
+    CHECK(!rs64::video::apply_pending(uc, true).changed);
+    CHECK(!rs64::video::demo_interpolating());
+}
+
 static void test_graphics_api_cycle() {
     using rs64::video::Display;
     UC uc; uc.validate();
@@ -511,8 +536,71 @@ static void test_graphics_api_cycle() {
     CHECK(rs64::video::to_friendly(uc)["graphicsAPI"] == "d3d11");
 }
 
+// The file and ROGUESQ_GFX_API read the same names; an unknown env value leaves the setting alone.
+static void test_graphics_api_names() {
+
+    UC uc;
+
+    uc.validate();
+
+    for (const char* name : { "auto", "vulkan", "d3d12", "d3d11", "d3d10" })
+    {
+        rs64::video::apply_friendly(uc, json{{"graphicsAPI", name}});
+        CHECK(rs64::video::to_friendly(uc)["graphicsAPI"] == name);
+    }
+
+    set_env("ROGUESQ_GFX_API", "metal");
+    rs64::video::apply_env_overrides(uc);
+    CHECK(uc.graphicsAPI == UC::GraphicsAPI::Metal);
+    CHECK(rs64::video::d3d10() == false);
+
+    set_env("ROGUESQ_GFX_API", "d3d10");
+    rs64::video::apply_env_overrides(uc);
+    CHECK(uc.graphicsAPI == UC::GraphicsAPI::D3D11);
+    CHECK(rs64::video::d3d10() == true);
+
+    set_env("ROGUESQ_GFX_API", "bogus");
+    rs64::video::apply_env_overrides(uc);
+    CHECK(uc.graphicsAPI == UC::GraphicsAPI::D3D11);
+
+    set_env("ROGUESQ_GFX_API", nullptr);
+    rs64::video::set_d3d10(false);
+}
+
+// A value of the wrong type is skipped on its own: the keys around it still load.
+static void test_wrong_types_skipped() {
+
+    UC uc;
+
+    uc.validate();
+    uc.vsync = false;
+    uc.fxaa = false;
+
+    const bool fxaa_before = uc.fxaa;
+
+    rs64::video::apply_friendly(uc, json{{"vsync", true}, {"fxaa", "yes"}, {"antialiasing", "4"},
+                                         {"widescreen", 1}, {"graphicsAPI", 5}, {"ssaa", 2},
+                                         {"advanced", {{"upscale2D", "x"}}}});
+    CHECK(uc.vsync == true);
+    CHECK(uc.fxaa == fxaa_before);
+    CHECK(uc.downsampleMultiplier == 2);
+
+    rs64::video::set_draw_distance(1.5f);
+    rs64::video::set_terrain_tessellation(4);
+    rs64::video::set_vr_mode(false);
+    rs64::video::apply_friendly(uc, json{{"drawDistance", true}, {"terrainTessellation", 2}, {"vrMode", 1}});
+    CHECK(rs64::video::draw_distance() == 1.5f);
+    CHECK(rs64::video::terrain_tessellation() == 2);
+    CHECK(rs64::video::vr_mode() == false);
+    rs64::video::set_draw_distance(1.0f);
+    rs64::video::set_terrain_tessellation(4);
+}
+
 int main() {
+    test_wrong_types_skipped();
+    test_demo_interpolation();
     test_graphics_api_cycle();
+    test_graphics_api_names();
     test_custom_aa_steps_to_fxaa();
     test_aa_presets();
     test_resolution_and_upscale_choices();

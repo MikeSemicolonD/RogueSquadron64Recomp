@@ -26,9 +26,11 @@ extern SDL_Window* g_sdl_window;
 #endif
 #include "hle/rt64_application.h"
 #include "hle/rt64_present_queue.h"
+#include "hle/rt64_rs64_host.h"
 #include "hle/rt64_rs64_lights.h"
 #include "hle/rt64_rs64_transition.h"
 #include "hle/rt64_rs64_vr.h"
+#include "rhi/rt64_render_hooks.h"
 #include "librecomp/mods.hpp"
 
 #include "ultramodern/ultramodern.hpp"
@@ -63,8 +65,6 @@ using recomp::dbg::env_on;
 using recomp::dbg::env_int;
 using recomp::dbg::env_u32;
 
-extern "C" volatile unsigned g_f5_heur[4];
-
 #ifdef RS64_MCP
 extern "C" void rs64_mcp_note_dl();
 #endif
@@ -83,10 +83,6 @@ extern void print_stack_with_symbols(void** frames, unsigned short count);
 // ultramodern events.cpp
 extern "C" uint8_t* g_rs64_parse_rdram;             // RDRAM snapshot for the current parse
 
-// lib/rt64 F5 GBI
-extern "C" volatile unsigned g_most_drawn_fb;        // most-drawn color image and its width
-extern "C" volatile unsigned g_most_drawn_fb_width;
-extern "C" volatile unsigned long long g_most_drawn_fb_ms;
 extern "C" volatile uint32_t g_rs64_clear_seq;          // mode-change clear count and size (hook_helpers.cpp)
 extern "C" volatile uint32_t g_rs64_clear_bytes;
 
@@ -306,8 +302,8 @@ extern "C" float rs64_aspect_scale(void)
     return (w > 1.0f && w < 4.0f) ? w : 1.0f;
 }
 
-// The game's frustum culls (scaled via rogue_squadron.toml hooks) assume 4:3, so in widescreen they widen to the window over 4:3, plus slack for
-// wings past a model's bounding sphere (the Calamari intro's far-left V-wing vanished while its wingtip showed). ROGUESQ_CULL_WIDEN=0 disables.
+// The game's frustum culls (scaled via rogue_squadron.toml hooks) assume 4:3, so in widescreen they widen to the window over 4:3. Every aspect gets slack
+// for parts past a model's bounding sphere (the Calamari intro's far-left V-wing vanished while its wingtip showed). ROGUESQ_CULL_WIDEN=0 disables.
 constexpr float kCullEdgeSlack = 1.05f;
 
 extern "C" float rs64_cull_widen(void)
@@ -325,10 +321,10 @@ extern "C" float rs64_cull_widen(void)
     const float window = (shared.swapChainHeight > 0) ? float(shared.swapChainWidth) / float(shared.swapChainHeight) : 0.0f;
     const float widened = std::max(scale, expand ? window * 0.75f : 1.0f);
 
-    return (widened > 1.0f) ? widened * kCullEdgeSlack : 1.0f;
+    return std::max(widened, 1.0f) * kCullEdgeSlack;
 }
 
-// The same slack on the vertical edges, where a banked or rolled craft's wings reach past its bounding sphere too.
+// The same slack on the vertical edges, where a banked or rolled craft's wings or a walker's head reach past its bounding sphere too.
 extern "C" float rs64_cull_widen_y(void)
 {
 
@@ -765,11 +761,13 @@ public:
         app->userConfig.refreshRateTarget = 30;
 #endif
 
-        // A Raspberry Pi's GPU can't keep up above the N64's own resolution, and RT64's framebuffer write-back costs it about half its frame time.
+        // A Raspberry Pi's GPU can't keep up above the N64's own resolution, RT64's framebuffer write-back costs it about half its frame time,
+        // and the whole-map terrain pass runs slower and draws blocky ground there than the game's own terrain.
         if (is_raspberry_pi()) {
             app->userConfig.refreshRateTarget = 30;
             app->userConfig.resolution = UC::Resolution::Original;
             rs64::video::set_framebuffer_writeback(false);
+            rs64::video::set_legacy_terrain(true);
         }
 
         // roguesq_video.json in the working directory overrides the baseline above (a default is written on first run); the ROGUESQ_* env vars below override the file.
@@ -809,6 +807,14 @@ public:
                 if (saved.contains(it.key()) && saved[it.key()] != it.value()) {
                     video_cfg_pins_[it.key()] = { it.value(), saved[it.key()] };
                 }
+            }
+
+            // A replay playlist switches these per recording, so they keep the player's value for the whole run.
+            const char* list = env_str("ROGUESQ_LS_REPLAY");
+            replay_playlist_ = list && std::strchr(list, ';');
+
+            for (const char* key : { "widescreen", "drawDistance" }) {
+                if (replay_playlist_ && saved.contains(key)) video_cfg_pins_[key] = { live[key], saved[key] };
             }
         } catch (...) {}
 
@@ -1024,7 +1030,9 @@ public:
         diag().log_vi_state();
 
         // Menu display settings: MSAA recreates the render targets first, as the F1 inspector does.
-        const rs64::video::ApplyResult menu_cfg = rs64::video::apply_pending(app->userConfig);
+        // A demo's cutscene stays at the game's own rate: tweening its cloud sheets stuttered (Taloraan's intro).
+        const bool demo_play = rs64::ls::demo_active((const uint8_t*)app->core.RDRAM) && !rs64_state_in_cinematic();
+        const rs64::video::ApplyResult menu_cfg = rs64::video::apply_pending(app->userConfig, demo_play);
 
         if (menu_cfg.msaa) app->updateMultisampling();
         if (menu_cfg.changed) app->updateUserConfig(menu_cfg.discard_fbs);
@@ -1034,6 +1042,37 @@ public:
         const auto pres0 = std::chrono::high_resolution_clock::now();
         app->updateScreen();
         diag().frame_profile(pres0);
+        finish_precompile();
+    }
+
+    // --precompile-shaders: once every queued shader is compiled, keep the pipeline cache and quit.
+    void finish_precompile()
+    {
+
+        static const bool s_precompile = env_on("ROGUESQ_PRECOMPILE_SHADERS");
+        static bool s_done = false;
+
+        if (!s_precompile || s_done)
+        {
+            return;
+        }
+
+        uint32_t pending = 0;
+        uint32_t compiled = 0;
+        bool draws_wait = false;
+
+        RT64::GetShaderCompileStatus(pending, compiled, draws_wait);
+
+        if ((pending != 0) || (compiled == 0))
+        {
+            return;
+        }
+
+        s_done = true;
+        app->device->savePipelineCache();
+
+        fprintf(stderr, "[precompile] %u shaders compiled and kept for later launches\n", compiled);
+        rs64_menu_request_quit();
     }
 
     void shutdown() override {
@@ -1075,6 +1114,7 @@ private:
     };
 
     std::map<std::string, VideoCfgPin> video_cfg_pins_;
+    bool replay_playlist_ = false;
 
     // A lost GPU device never recovers; rebuild RT64 on the same window. Rebuilds back off (1 s, doubling to 16 s) while losses keep recurring so a persistent fault can't spin.
     // ROGUESQ_NO_DEVICE_LOST_RECOVERY=1 disables. Runs on the gfx thread, which is the only caller of send_dl/update_screen.
@@ -1135,12 +1175,15 @@ private:
     void apply_replay_display()
     {
 
-        const char* path = env_str("ROGUESQ_LS_REPLAY");
+        const char* list = env_str("ROGUESQ_LS_REPLAY");
+
+        // A playlist (a;b;...) starts with the first entry's display; lockstep.cpp switches it for each later one.
+        const std::string path = list ? std::string(list).substr(0, std::string(list).find(';')) : std::string();
         rs64::ls::SessionHeader h;
         std::vector<rs64::ls::FrameInput> frames;
         std::map<uint32_t, std::vector<uint8_t>> song;
 
-        if (!path || !rs64::ls::load_replay(path, &h, &frames, &song) || h.draw_pct == 0)
+        if (path.empty() || !rs64::ls::load_replay(path.c_str(), &h, &frames, &song) || h.draw_pct == 0)
         {
             return;
         }
@@ -1158,7 +1201,7 @@ private:
     void maybe_persist_video_cfg()
     {
 
-        if (video_cfg_path_.empty() || !app) return;
+        if (video_cfg_path_.empty() || !app || rs64::video::demo_interpolating()) return;
         if ((vi_count_ % 15) != 0) return;                 // ~4x/sec; config changes are rare
 
         std::string cur;
@@ -1175,7 +1218,7 @@ private:
             json j = json::parse(cur);
 
             for (auto it = video_cfg_pins_.begin(); it != video_cfg_pins_.end();) {
-                if (j[it->first] == it->second.live) {
+                if (replay_playlist_ || j[it->first] == it->second.live) {
                     j[it->first] = it->second.saved;
                     ++it;
                 } else {
@@ -1443,7 +1486,7 @@ private:
     // in upstream_compat.cpp), so it gets the fast-forward only.
     // ROGUESQ_CINE_FASTFWD=N adds N per present to the submitted-frame counter the cinematic times from (0x8011A890) until
     // the cutscene's end frame, so the timeline completes through the game's own logic.
-    // ROGUESQ_SKIP_DEMO=<n> pins the attract demoId
+    // ROGUESQ_FORCE_DEMO=<n> pins the attract demoId
     // (0x80130B54) and its cycle byte so that demo loops. 0=Tatooine 1=JadeMoon 2=KileII
     // 3=Taloraan 4=Fest 5=TrenchRun.
     void drive_boot_target()
@@ -1474,9 +1517,9 @@ private:
 
         static const int s_ffwd = env_int("ROGUESQ_CINE_FASTFWD", (s_mode != BOOT_OFF) ? 400 : 0);
 
-        static const int s_skip_demo = [](){
+        static const int s_force_demo = [](){
 
-            if (env_str("ROGUESQ_SKIP_DEMO")) return env_int("ROGUESQ_SKIP_DEMO");
+            if (env_str("ROGUESQ_FORCE_DEMO")) return env_int("ROGUESQ_FORCE_DEMO");
 
             return (s_mode == BOOT_DEMO) ? s_demo_arg : -1;
         }();
@@ -1510,12 +1553,24 @@ private:
         {
             static bool s_seen_cine = false, s_skip_done = false;
 
+            // Past frame 95 the boot intro takes START only once the pilot has seen it (isUnlockBitSet(0), bit 0 of 0x8013A663); a fresh pilot gets the bit while it plays.
+            constexpr uint32_t kSeenBits = 0x13A663u;
+            static bool s_unset_seen = false;
+
+            if (g_active_overlay == 2 && !s_seen_cine && !s_skip_done)
+            {
+                s_unset_seen = (diag().rd8(kSeenBits) & 1u) == 0;
+                diag().wr8(kSeenBits, diag().rd8(kSeenBits) | 1u);
+            }
+
             if (g_active_overlay == 2) s_seen_cine = true;
 
             if (!s_skip_done && s_seen_cine && g_active_overlay == 1)
             {
                 s_skip_done = true;
                 g_boot_pulse_start = 0;
+
+                if (s_unset_seen) diag().wr8(kSeenBits, diag().rd8(kSeenBits) & ~1u);
 
                 fprintf(stderr, "[boot-skip] menu handoff reached; START pulse off\n");
                 fflush(stderr);
@@ -1526,8 +1581,8 @@ private:
             g_boot_pulse_start = (s_skip_done || g_active_overlay != 2) ? 0 : 1;
         }
 
-        if (s_skip_demo >= 0 && s_skip_demo <= 5) {
-            diag().wr8(0x130B54, (uint8_t)s_skip_demo);
+        if (s_force_demo >= 0 && s_force_demo <= 5) {
+            diag().wr8(0x130B54, (uint8_t)s_force_demo);
             diag().wr8(0x130B55, 0);
         }
     }

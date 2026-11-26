@@ -285,7 +285,38 @@ static void combo_checks()
     assert(r.targets[(int)Target::CDown][0].with.kind == SourceKind::None);
 }
 
-// VR controllers are a device of their own: today's layout as defaults, both grips = Roll, the left stick steers.
+// Function-key shortcuts: F1-F12 by default, rebindable by SDL key name, one unbindable, all off at once; the JSON keeps them.
+static void hotkey_checks()
+{
+
+    HotkeyConfig c;
+
+    assert(hotkey_at(c, SDL_SCANCODE_F1) == Hotkey::Inspector);
+    assert(hotkey_at(c, SDL_SCANCODE_F10) == Hotkey::Pause);
+    assert(hotkey_at(c, SDL_SCANCODE_P) == Hotkey::Count);
+
+    c.keys[(int)Hotkey::Pause] = "P";
+    c.keys[(int)Hotkey::Fps] = "";
+
+    assert(hotkey_at(c, SDL_SCANCODE_P) == Hotkey::Pause);
+    assert(hotkey_at(c, SDL_SCANCODE_F10) == Hotkey::Count);
+    assert(hotkey_at(c, SDL_SCANCODE_F7) == Hotkey::Count);
+
+    Bindings b = default_bindings();
+
+    b.hotkeys = c;
+    b.hotkeys.enabled = false;
+    assert(hotkey_at(b.hotkeys, SDL_SCANCODE_P) == Hotkey::Count);
+    assert(save_bindings(b, "hotkey_test.json"));
+
+    Bindings r;
+
+    assert(load_bindings(r, "hotkey_test.json"));
+    remove("hotkey_test.json");
+    assert(!r.hotkeys.enabled && r.hotkeys.keys[(int)Hotkey::Pause] == "P" && r.hotkeys.keys[(int)Hotkey::Fps].empty() && r.hotkeys.keys[(int)Hotkey::Dump] == "F12");
+}
+
+// VR controllers are a device of their own: today's layout as defaults, the grips unbound, the left stick steers.
 static void vr_checks()
 {
 
@@ -326,7 +357,7 @@ static void vr_checks()
 
     st.vr_buttons = (1u << VrGripL) | (1u << VrGripR);
     resolve(b, st, &btn, &x, &y);
-    assert(btn & N64_R_TRIG);
+    assert(btn == 0);
 
     st.vr_buttons = 0;
     st.vr_x = 1.0f;
@@ -335,8 +366,8 @@ static void vr_checks()
     assert(near(x, 80.0f / 127.0f) && near(y, 80.0f / 127.0f));
     st.vr_x = st.vr_y = 0.0f;
 
-    // The roll row shows the grip combo.
-    assert(menu_source_name(b.targets[(int)Target::RTrig][shown_source(b, Target::RTrig, Device::Vr)]) == "L GRIP - R GRIP");
+    // Roll has no VR default.
+    assert(shown_source(b, Target::RTrig, Device::Vr) < 0);
     assert(font_safe(menu_source_name(Source{ SourceKind::VrAxis, 0, -1 })));
 
     // Menus: VR A confirms, B backs out, Menu pauses.
@@ -353,13 +384,16 @@ static void vr_checks()
     assert(rb.targets[(int)Target::A][shown_source(rb, Target::A, Device::Vr)].code == VrTriggerR);
     assert(rb.targets[(int)Target::A][shown_source(rb, Target::A, Device::Keyboard)].code == SDL_SCANCODE_G);
 
-    // JSON keeps VR sources and the grip combo.
-    assert(save_bindings(b, "vr_test.json"));
+    // JSON keeps VR sources and a VR combo.
+    Bindings gb = b;
+    rebind(gb, Target::RTrig, Device::Vr, combo(vr(VrGripR), vr(VrGripL)));
+    assert(save_bindings(gb, "vr_test.json"));
     Bindings r;
     assert(load_bindings(r, "vr_test.json"));
     remove("vr_test.json");
     const Source& roll = r.targets[(int)Target::RTrig][shown_source(r, Target::RTrig, Device::Vr)];
     assert(roll.kind == SourceKind::VrButton && roll.with.kind == SourceKind::VrButton);
+    assert(r.targets[(int)Target::A][shown_source(r, Target::A, Device::Vr)].code == VrTriggerR);
 }
 
 // menu_fixed_mask_pad: pad A/B/Start and the D-pad.
@@ -401,9 +435,26 @@ static void menu_fixed_pad_checks()
     assert(near(x, 0.0f));
 
     Bindings r;
+    b.trigger_resistance = 0.25f;
     assert(save_bindings(b, "pad_deadzone_test.json") && load_bindings(r, "pad_deadzone_test.json"));
     remove("pad_deadzone_test.json");
-    assert(near(r.pad_deadzone, 0.5f));
+    assert(near(r.pad_deadzone, 0.5f) && near(r.trigger_resistance, 0.25f));
+
+    // Pad triggers bound to A/Z drive the throttle from cruise: released = the game's own speed, RT = full, LT = stop, both = cruise.
+    b = default_bindings();
+    SDL_JoystickSetVirtualAxis(pj, SDL_CONTROLLER_AXIS_TRIGGERLEFT, -32768);
+    SDL_JoystickSetVirtualAxis(pj, SDL_CONTROLLER_AXIS_TRIGGERRIGHT, -32768);
+    SDL_GameControllerUpdate();
+    assert(throttle_position(b, st) < 0.0f);
+    SDL_JoystickSetVirtualAxis(pj, SDL_CONTROLLER_AXIS_TRIGGERRIGHT, 32767);
+    SDL_GameControllerUpdate();
+    assert(near(throttle_position(b, st), 1.0f));
+    SDL_JoystickSetVirtualAxis(pj, SDL_CONTROLLER_AXIS_TRIGGERLEFT, 32767);
+    SDL_GameControllerUpdate();
+    assert(near(throttle_position(b, st), 0.5f));
+    SDL_JoystickSetVirtualAxis(pj, SDL_CONTROLLER_AXIS_TRIGGERRIGHT, -32768);
+    SDL_GameControllerUpdate();
+    assert(near(throttle_position(b, st), 0.0f));
 
     SDL_GameControllerClose(pad);
     SDL_JoystickDetachVirtual(vi);
@@ -418,6 +469,7 @@ int main() {
 
     controls_menu_checks();
     combo_checks();
+    hotkey_checks();
     vr_checks();
     SDL_SetMainReady();
     if (SDL_Init(SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER) != 0) {

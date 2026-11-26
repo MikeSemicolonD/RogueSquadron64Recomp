@@ -3,7 +3,7 @@
 // The explorer's shared core (renderer, camera, materials, markers, picking); the other area scripts load after it, in order (the loader at the end of index.html). three.js arrives through window.RS64_THREE.
 const { THREE, OrbitControls, TransformControls, GLTFExporter } = window.RS64_THREE;
 const { parseShadowTextures, parseMusicCues, musicZoneSet, musicZoneEdit, musicConditionSources, musicGaps, musicRegionBox, musicMargin, musicAddTrigger, openRom, parseHOB, parseHMT, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, encodeTerrainTex, terrainTexRGBA, paintApply, paintPath, paintBudget, PAINT_MARK, modAssetFile, parseVoiceLines, parseAnim, parseSpriteAnim, spriteKeys,
-  orderSetTarget, recordSetName, shotDropCameras, parseSdir, decodeMusyxAdpcm, wavBytes, parseSpeech, decodeMort, encodeMort, parseVoiceTable, parseMenuVoice, parseFrontText, parsePool, parseSfxTable, renderSfx, parseCutsceneVoice, parseMixTables, parseSongTable, parseSongGroups, parseSong, encodeTexture, encodeBPS, zipStore, hmpGrid, writeHMP, datAddItem, datRemoveItem, modLevelsParse, modLevelsWrite, modLevelNew, modLevelAliases, medalInfo, datNameItem, RULE_WHENS, RULE_ACTIONS, RULES_PATH, RULES_JSON_PATH, rulesParse, rulesExtParse, modChecksOf, menuExtParse, zipUnpack, rulesScriptParse, rulesScriptWrite, rulesScriptCheck, rulesComplete, rulesVariables, condCheck, condRename, rulesWrite, ruleRefs, rulesRename, rulesBroken, datBlank, hmpFlat, datWaterGet, datWaterSet, ENV_PATH, envParse, envWrite, recordInert, npcPathGet, npcSetPath, npcPathField, datRemoveIndexed, objectivesApply, objectiveTargets, isUnit, isTriggerArea, isFlightPath, WAVE_FIELDS, waveGet, waveSet, missionScript, scriptUnits, arrowWrite, arrowSources, unitDeath, levelUsedObjectiveSlots, levelUsedFlags, waveFlagFor, triggerWave, UNITS_ANY_LEVEL, UNITS_NEED_PATH, UNITS_OWN_PATH, UNIT_RECORD_FROM, MODEL_UNITS, PACKAGES_PATH, unitModelName, datAddDevastatorGuns, hmtRenameTextures, hmtRestoreNames, TRAIN_UNITS, datAddTrain, datRemoveUnit, trainOf, datAddEnemy, splineSetPoints, splinePoints, splineAt, splineCopy, splineNew, splineAttackEnd, splineSetAttackEnd, uniqueName, shotDestroyGet, shotDestroySet, shotRename, datRenameItem, triggerSetActivators, craftImportSlots, hobImportCraft, parseCutscene, cutsceneValue, createHistory, projectWrite, projectRead, crc32, writeCutscene, shotLinkGet, shotLinkSet, cutClips, cutDragClip, cutAddEvent, cutRemoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutRemoveActor, cutSetActorName, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutUnbake, cutBake, cutBakedEvents, cutSyncModeSpans, CUT_LIMITS, CUT_ACTOR_EVENTS, cutMoveEvent, cutAnimateActor, CRAWL_PLANETS, CRAWL_PATH, crawlFontGaps, stockCrawls, crawlParse, crawlWrite, crawlFont, crawlLayout, encodeJpeg, CRAWL_STOCK_CAMERA, crawlCameraAt, gameFonts, glyphPackParse, glyphPackWrite, langChars, fontCovers, FONT_STRIP_HEADER, MOD_KINDS, modChangeKind, menuItemKey, menuItemKeys, menuLinks, exportPlan, menuParse, menuWrite, menuWriteSubset, menuMerge, menuLayout, menuFontGaps, NATIVE_MENUS, MENU_DEFAULT_BUTTONS, menuWithDefaults } = window.RS64;
+  orderSetTarget, recordSetName, shotDropCameras, parseSdir, decodeMusyxAdpcm, wavBytes, parseSpeech, decodeMort, encodeMort, parseVoiceTable, parseMenuVoice, parseFrontText, parsePool, parseSfxTable, renderSfx, parseCutsceneVoice, parseMixTables, parseSongTable, parseSongGroups, parseSong, encodeTexture, encodeBPS, zipStore, hmpGrid, writeHMP, hmpResize, hmpShiftLights, datShift, cutsceneShift, hmpSetSun, datAddItem, datRemoveItem, modLevelsParse, modLevelsWrite, modLevelNew, modLevelAliases, SHIP_TEMPLATES, shipsParse, shipsWrite, shipBehaviours, SHIP_MAX, shipFreeSpot, shipNew, shipAliases, hobSetObjectName, hmtOwnTextures, hudIconSize, hudIconWrite, blueprintWrite, texFileRename, shipStandAt, shipSpotAt, shipHangarRemove, shipHangarAdd, medalInfo, datNameItem, RULE_WHENS, RULE_ACTIONS, RULES_PATH, RULES_JSON_PATH, rulesParse, rulesExtParse, CRAFT_RULE_EXT, modChecksOf, menuExtParse, zipUnpack, rulesScriptParse, rulesScriptWrite, rulesScriptCheck, rulesComplete, rulesVariables, condCheck, condRename, rulesWrite, ruleRefs, rulesRename, rulesBroken, datBlank, hmpFlat, datWaterGet, datWaterSet, datFlightInset, ENV_PATH, envParse, envWrite, recordInert, npcPathGet, npcSetPath, npcPathField, datRemoveIndexed, objectivesApply, objectiveTargets, isUnit, isTriggerArea, isFlightPath, WAVE_FIELDS, waveGet, waveSet, missionScript, scriptUnits, arrowWrite, arrowSources, unitDeath, levelUsedObjectiveSlots, levelUsedFlags, waveFlagFor, triggerWave, unitGate, unitGateSet, unitDeathSet, unitHasEvents, UNITS_ANY_LEVEL, UNITS_NEED_PATH, UNITS_OWN_PATH, UNIT_RECORD_FROM, MODEL_UNITS, PACKAGES_PATH, unitModelName, datAddDevastatorGuns, hmtRenameTextures, hmtRestoreNames, TRAIN_UNITS, datAddTrain, datRemoveUnit, trainOf, datAddEnemy, splineSetPoints, splinePoints, splineAt, splineCopy, splineNew, splineAttackEnd, splineSetAttackEnd, uniqueName, shotDestroyGet, shotDestroySet, shotSwapGet, shotSwapSet, shotRename, splineLoops, splineLoopBlocked, splineSetLoop, datRenameItem, triggerSetActivators, craftImportSlots, hobImportCraft, craftImportPlacement, craftClipBake, parseCutscene, cutsceneValue, createHistory, projectWrite, projectRead, crc32, writeCutscene, shotLinkGet, shotLinkSet, cutClips, cutDragClip, cutAddEvent, cutRemoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutRemoveActor, cutSetActorName, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutUnbake, cutBake, cutBakedEvents, cutSyncModeSpans, CUT_LIMITS, CUT_ACTOR_EVENTS, cutMoveEvent, cutAnimateActor, CRAWL_PLANETS, CRAWL_PATH, crawlFontGaps, stockCrawls, crawlParse, crawlWrite, crawlFont, crawlLayout, encodeJpeg, CRAWL_STOCK_CAMERA, crawlCameraAt, gameFonts, glyphPackParse, glyphPackWrite, langChars, fontCovers, FONT_STRIP_HEADER, MOD_KINDS, modChangeKind, menuItemKey, menuItemKeys, menuLinks, exportPlan, menuParse, menuWrite, menuWriteSubset, menuMerge, menuLayout, menuFontGaps, NATIVE_MENUS, MENU_DEFAULT_BUTTONS, menuWithDefaults } = window.RS64;
 const $ = (id) => document.getElementById(id);
 
 function elem(tag, props, ...children) {
@@ -54,6 +54,23 @@ function store(key, value) {
     else
       localStorage.setItem(key, JSON.stringify(value));
   } catch {}
+}
+
+// File handles and the last ROM go in IndexedDB, which (unlike localStorage) holds them.
+function idbKv(mode, fn) {
+  return new Promise((res, rej) => {
+    const open = indexedDB.open('rs64-explorer', 1);
+
+    open.onupgradeneeded = () => open.result.createObjectStore('kv');
+    open.onerror = () => rej(open.error);
+
+    open.onsuccess = () => {
+      const req = fn(open.result.transaction('kv', mode).objectStore('kv'));
+
+      req.onsuccess = () => res(req.result);
+      req.onerror = () => rej(req.error);
+    };
+  });
 }
 
 // HOB vertices are s16 model units; levels (DAT positions, terrain) use world units. Item scale applies on top.
@@ -140,7 +157,7 @@ const TYPES = {
     color: 0x5fd17a,
     label: 'Goal areas',
     icon: 'tevent',
-    tip: 'Fires when the player or a chosen unit comes close: it can complete a Reach an area objective, bring in a wave, play a camera shot or set off a rule'
+    tip: 'Triggers when the player or a chosen unit comes close: it can complete a Reach an area objective, set a flag, play a cutscene or set off a rule'
   },
   tspawn: { color: 0xc3e65a, label: 'Wave areas', icon: 'tspawn', tip: 'Like a goal area, and also brings in the unit it names' },
   troam: { color: 0xd17aff, label: 'Roam areas', icon: 'troam', tip: 'A unit wanders inside this ball and turns back toward the middle when it strays out. Height counts, so keep the centre at ground level for ground units' },
@@ -171,7 +188,9 @@ const TYPES = {
   7: { color: 0x3f9a58, label: 'Other triggers', icon: 'diamond', tip: 'Trigger areas the game never reads' },
 };
 
+// 0x00: placed models with no unit behaviour (lamps, buildings); like 0x14 their model comes from the item, not the subtype.
 const SUBTYPES = {
+  0x00: 'Scenery',
   0x01: 'Player start',
   0x02: 'Restart point',
   0x03: 'Spline',
@@ -349,6 +368,28 @@ controls.dampingFactor = 0.06;
 controls.rotateSpeed = 0.7;
 controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.ROTATE };
 
+// The orbit zoom moves a share of the distance to the orbit point, so it crawls near that point and never passes it. Within 2% of the
+// scene's size of it, a zoom in moves the camera and the orbit point forward together by a fixed step instead.
+canvas.addEventListener('wheel', (e) => {
+  if (e.deltaY >= 0 || !root || !controls.enabled)
+    return;
+
+  // A level's size is its map's (its sky dome reaches far past the ground).
+  const map = selectedLevel ? mapSize() : [Infinity];
+
+  root.userData.radius ??= Number.isFinite(map[0]) ? Math.max(...map) / 2 : new THREE.Box3().setFromObject(root).getBoundingSphere(new THREE.Sphere()).radius || 1;
+
+  const near = root.userData.radius * 0.02;
+
+  if (camera.position.distanceTo(controls.target) > near)
+    return;
+
+  const step = controls.target.clone().sub(camera.position).normalize().multiplyScalar(near * 0.3);
+
+  camera.position.add(step);
+  controls.target.add(step);
+}, { capture: true, passive: true });
+
 // The inspect card belongs to the spot it was opened on; any orbit, pan, zoom or fly closes it.
 controls.addEventListener('start', () => ($('info').hidden = true));
 
@@ -363,7 +404,13 @@ const resize = () => {
   renderer.setSize(r.width, r.height, false);
   camera.aspect = r.width / Math.max(1, r.height);
   camera.updateProjectionMatrix();
+
+  // Drawn now: until the next loop frame the browser would stretch the old picture to the new size (a sidebar drag squashes it).
+  if (frameLoopRunning)
+    renderer.render(scene, camera);
 };
+
+let frameLoopRunning = false;
 
 new ResizeObserver(resize).observe(canvas.parentElement);
 addEventListener('resize', resize);
@@ -675,6 +722,7 @@ Promise.all([ready, scriptsLoaded]).then(() => renderer.setAnimationLoop(() => {
   fly(dt);
   applyAnim(dt);
   applyExhaust(dt);
+  applyLamps(dt);
   applyEffect(dt);
   lightsFxTick();
   lightsPreviewTick();
@@ -707,6 +755,7 @@ Promise.all([ready, scriptsLoaded]).then(() => renderer.setAnimationLoop(() => {
   orthoClip();
   updateViewNav();
   renderer.render(scene, camera);
+  frameLoopRunning = true;
 }));
 
 // In Objects / Events mode the box describes the hovered item, else the selection; otherwise the view's stats.
@@ -819,6 +868,7 @@ function materialFor(model, matIndex, key) {
       cutout,
       blend,
       emissive: !!m?.emissive,
+      glow: !!m?.glow,
       index: matIndex,
       matName: m?.name ?? '',
       tex: t && { name: t.name, w: t.w, h: t.h, type: t.type, flags: t.flags, trans: t.trans }
@@ -834,7 +884,7 @@ const gameLighting = () => $('optLight').value === 'game';
 function threeMaterial(info, textured, wire)
 {
   const game = gameLighting();
-  const k = `${info.map ? info.map.id : 0}|${textured}|${wire}|${!!info.valpha}|${game}`;
+  const k = `${info.map ? info.map.id : 0}|${textured}|${wire}|${!!info.valpha}|${game}|${!!info.glow}`;
 
   if (!matPool.has(k))
   {
@@ -843,7 +893,9 @@ function threeMaterial(info, textured, wire)
     // Glass (emissive, opaque texture made translucent by vertex alpha, e.g. sky_lv_01 on canopies) is a sphere-mapped reflection:
     // the models carry per-face normals for it, and the texture slides across the glass as the view turns.
     const env = textured && info.emissive && info.valpha && !info.blend;
-    const Mat = env ? THREE.MeshMatcapNodeMaterial : (game ? THREE.MeshBasicNodeMaterial : THREE.MeshLambertNodeMaterial);
+
+    // A glowing material is drawn at full brightness in game, sun or shade.
+    const Mat = env ? THREE.MeshMatcapNodeMaterial : (game || info.glow ? THREE.MeshBasicNodeMaterial : THREE.MeshLambertNodeMaterial);
 
     const mat = new Mat({
       ...(env ? { matcap: info.map } : { map: textured ? info.map : null }),
@@ -864,7 +916,7 @@ function threeMaterial(info, textured, wire)
     else if (info.valpha)
       mat.opacityNode = new THREE.AttributeNode('valpha', 'float');
 
-    if (!env && !blend)
+    if (!env && !blend && !info.glow)
       rtLit(mat);
 
     matPool.set(k, mat);
@@ -1498,8 +1550,18 @@ function applyMaterialOptions() {
 let voiceLine = () => undefined;
 const fmt = (v) => (Array.isArray(v) ? v.map((n) => n.toFixed(2)).join(', ') : v);
 const hex = (v) => '0x' + v.toString(16).toUpperCase();
+
+// Named objects after a verb: one in quotes on the line, several as a bulleted list under "verb:".
+const listed = (verb, names) => (names.length === 1 ? `${verb} '${names[0]}'` : `${verb}:` + names.map((n) => `
+• '${n}'`).join(''));
+
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const TEX_TYPES = ['CI4', 'CI8', 'RGB16', 'RGB(A)32', 'Gray 4/8', 'Gray 8'];
+
+// A condition in words ("When 'X' is entered", from gateWords) as a card line: "Only once 'X' is entered".
+// A condition (gateWords: "When 'X' is entered") joined onto what sets the item off: ", after 'X' is entered" ('' with none). "after", not
+// "once": the item waits for it, it does not fire only one time.
+const afterWords = (w) => (w ? ', ' + w.replace(/^(When|After) /, 'after ') : '');
 
 // What an item does, in words; trigger targets and voice lines are filled in by showLevel.
 function describe(it)
@@ -1512,13 +1574,13 @@ function describe(it)
       s += ". Sits off the map; likely the level's default music settings";
 
     if (it.linkedFrom && !it.label)
-      s += '. Used by ' + it.linkedFrom.join(', ');
+      s += '. ' + listed('Used by', it.linkedFrom);
 
     return s;
   }
 
   if (it.type === 3)
-    return it.users?.length ? 'Path followed by ' + it.users.join(', ') : (it.pathKind ? `Path with no NPC naming it; grouped with ${TYPES[it.pathKind].label.toLowerCase()} by its name` : 'Path that no NPC names (a level script may switch an NPC onto it)');
+    return it.users?.length ? listed('Path followed by', it.users) : (it.pathKind ? `Path with no NPC naming it; grouped with ${TYPES[it.pathKind].label.toLowerCase()} by its name` : 'Path that no NPC names (a level script may switch an NPC onto it)');
 
   if (it.type === 7)
   {
@@ -1549,7 +1611,7 @@ function describe(it)
       const w = e.w;
       const fl = e.fl;
 
-      lines.push(it.paths?.length ? `Fires when an NPC on ${it.paths.join(', ')} passes it` : 'Fires when an NPC passes this spline node (no spline references it)');
+      lines.push(`When an NPC passes this point${afterWords(it.needWords)}.`);
 
       // 0x22 hold (func_800F9AB8 + func_800F410C): stop while the timer runs, flag w[1] != w[2], or counter w[3] < w[4].
       const hold = () => {
@@ -1580,11 +1642,6 @@ function describe(it)
       if (what)
         lines.push(what);
 
-      const need = [e.flag && `flag #${e.flag} is set`, e.counter && `counter #${e.counter} ≥ ${e.atLeast}`].filter(Boolean);
-
-      if (need.length)
-        lines.push('Only if ' + need.join(' and '));
-
       const act = [
         e.addCounter && `counter #${e.addCounter} ${e.amount >= 0 ? '+' : '−'}= ${Math.abs(e.amount)}`,
         e.setFlag && `flag #${e.setFlag} = ${e.value}`
@@ -1600,18 +1657,25 @@ function describe(it)
     {
       // func_800AA6D0 / func_80065980: an activator entering/leaving the area adjusts mission flags and counters,
       // which the level's own script (lvN_checkComplexObjectives) reacts to.
-      const who = it.activators.map((a) => (a === 'ply' ? 'the player' : a)).join(', ');
+      const who = it.activators.map((a) => (a === 'ply' ? 'the player' : `'${a}'`));
+      const near = it.cylinder ? 'flies over it' : `comes within ${it.radius.toFixed(1)} units`;
 
-      lines.push(`Fires when ${who} ${it.cylinder ? 'flies over' : 'comes within'} ${it.radius.toFixed(1)} units`);
+      const after = afterWords(it.needWords);
 
-      const r = it.requires;
-      const need = r && [r.flag && `flag #${r.flag} is set`, r.counter && `counter #${r.counter} ≥ ${r.atLeast}`].filter(Boolean);
-
-      if (need?.length)
-        lines.push('Only if ' + need.join(' and '));
+      lines.push(who.length === 1 ? `Triggers when ${who[0]} ${near}${after}` : `Triggers when one of these ${near}${after}:` + who.map((w) => `\n• ${w}`).join(''));
 
       // Enter/exit flags are just set / cleared, so only counter changes are worth listing.
-      const act = (b) => (b.counter ? `counter #${b.counter} ${b.add >= 0 ? '+' : '−'}= ${Math.abs(b.add)}` : '');
+      const act = (b) => {
+        const c = `'counter #${b.counter}'`;
+
+        if (!b.counter)
+          return '';
+
+        if (Math.abs(b.add) === 1)
+          return `${b.add > 0 ? 'Increments' : 'Decrements'} ${c}`;
+
+        return b.add >= 0 ? `Adds ${b.add} to ${c}` : `Subtracts ${-b.add} from ${c}`;
+      };
 
       if (act(it.onEnter))
         lines.push('On enter: ' + act(it.onEnter));
@@ -1623,8 +1687,11 @@ function describe(it)
       lines.push('Linked to ' + it.targets.join(', '));
     }
 
-    if (it.voice)
+    // Many voice ids are empty slots (no recording, a blank subtitle), lines never recorded or cut.
+    if (it.voice?.trim())
       lines.push(`Name points to voice line ${it.voiceId}: "${it.voice}"`);
+    else if (it.voice != null)
+      lines.push(`Name points to voice line ${it.voiceId} (empty)`);
 
     return lines.join('\n') || (SUBTYPES[it.sub] ?? 'Trigger') + ' (no activators or actions decoded for this subtype yet)';
   }
@@ -1682,8 +1749,6 @@ function itemRows(it)
   return [
     ['What it is', esc(describe(it)).replaceAll('\n', '<br>')],
     ['Kind', kindParts(it).join(' · ')],
-    ['DAT type / subtype', `${it.type} / ${hex(it.sub)}`],
-    ['Index / offset', `${it.index} / ${hex(it.offset)}`],
     it.model && (!camera || aims) && [aims ? 'Aims at' : 'Reference', esc(it.model)],
     [
       it.recordPos ? 'Position (node)' : 'Position',
@@ -1788,7 +1853,36 @@ function aimLink(link, origin)
   head.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), end);
 }
 
-function makeMarker(it) {
+// A line whose points change while it is shown (drag outlines). The WebGPU renderer keeps the vertex buffer a line was first drawn with,
+// and a swapped or empty geometry fails the whole frame, so the buffer is allocated once and rewritten in place.
+const OUTLINE_POINTS = 4200;
+
+function outlineLine(mat)
+{
+  const g = new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(OUTLINE_POINTS * 3), 3));
+  const line = new THREE.Line(g, mat);
+
+  g.setDrawRange(0, 1);
+  line.frustumCulled = false;
+  line.raycast = () => {};
+
+  return line;
+}
+
+function setOutline(line, pts)
+{
+  const a = line.geometry.attributes.position;
+  const n = Math.min(pts.length, OUTLINE_POINTS);
+
+  for (let i = 0; i < n; i++)
+    a.setXYZ(i, pts[i].x, pts[i].y, pts[i].z);
+
+  a.needsUpdate = true;
+  line.geometry.setDrawRange(0, Math.max(n, 1));
+}
+
+// zoneSteps: a zone's grid steps per side (drapeZone keeps the count it was built with, so its vertex buffers keep their size).
+function makeMarker(it, zoneSteps = null) {
   const [x, y, z] = it.pos;
   let mk;
 
@@ -1800,7 +1894,7 @@ function makeMarker(it) {
     const rot = placementRotation(it.rot);
     const sx = it.size[0];
     const sz = it.size[2];
-    const n = Math.max(2, Math.ceil(Math.max(Math.abs(sx), Math.abs(sz)) / 0.5));
+    const n = zoneSteps ?? Math.max(2, Math.ceil(Math.max(Math.abs(sx), Math.abs(sz)) / 0.5));
 
     const at = (u, v) => {
       const p = new THREE.Vector3(u * sx, 0, v * sz).applyMatrix4(rot);
@@ -1902,6 +1996,15 @@ function makeMarker(it) {
       else
       {
         area = new THREE.LineSegments(new THREE.WireframeGeometry(new THREE.IcosahedronGeometry(it.radius, 1)), lineMat(markerKind(it), 0.25));
+
+        // Hovered or selected, the ball fills in (stronger toward its edge) so its size reads at a glance; editHighlight shows it.
+        const fill = new THREE.Mesh(new THREE.SphereGeometry(it.radius, 48, 24), areaFillMat(markerKind(it)));
+
+        fill.visible = false;
+        fill.raycast = () => {};
+        fill.renderOrder = 2;
+        mk.add(fill);
+        mk.userData.areaFill = fill;
       }
 
       area.userData.item = it;
@@ -1953,6 +2056,22 @@ function zoneFillMat(kind) {
   return zoneFill.get(kind);
 }
 
+// A trigger ball's fill: faint where it faces the camera, stronger toward the rim, so its size and shape read as a solid ball.
+const areaFill = new Map();
+
+function areaFillMat(kind) {
+  if (!areaFill.has(kind))
+  {
+    const m = new THREE.MeshBasicNodeMaterial({ color: TYPES[kind]?.color ?? 0xffffff, transparent: true, depthWrite: false, fog: false });
+    const rim = THREE.normalView.dot(THREE.positionViewDirection).abs().oneMinus().pow(2);
+
+    m.opacityNode = THREE.float(0.06).add(rim.mul(0.5));
+    areaFill.set(kind, m);
+  }
+
+  return areaFill.get(kind);
+}
+
 const hiddenTypes = new Set();
 
 // A music region's inner and outer boxes keep their own colours but share one legend row.
@@ -1960,9 +2079,11 @@ const legendKindOf = (k) => (k === 'zmtrig' ? 'zmus' : k);
 
 function applyMarkerVisibility(markers)
 {
-  const kinds = new Set(markers.children.map((m) => legendKindOf(String(markerKind(m.userData.item)))));
+  // The selection's edit handle also sits in the group; only items' markers follow the legend.
+  const items = markers.children.filter((m) => m.userData.item);
+  const kinds = new Set(items.map((m) => legendKindOf(String(markerKind(m.userData.item)))));
 
-  for (const m of markers.children)
+  for (const m of items)
     m.visible = !hiddenTypes.has(legendKindOf(String(markerKind(m.userData.item))));
 
   // The master checkbox mirrors the per-kind toggles: off when all are hidden, indeterminate when some are.
@@ -2175,9 +2296,11 @@ function inspect(hit)
     return {
       title: o.userData.item.name || o.userData.item.label || '(unnamed)',
       rows: itemRows(o.userData.item),
+      // The raw record ids, for matching the game's memory or the decomp; Kind names the same thing for a modder.
+      tip: `DAT type ${o.userData.item.type}, subtype ${hex(o.userData.item.sub)}, record ${o.userData.item.index} at ${hex(o.userData.item.offset)}`,
       help: o.userData.item,
       place: o.userData.item,
-      voiceIds: triggerVoiceIds(o.userData.item, selected?.split('/').pop())
+      voiceIds: triggerVoiceIds(o.userData.item, selected?.split('/').pop()).filter((v) => audioBank?.byIndex.get(audioBank.voiceMap[v]))
     };
 
   if (o.userData.tiles)
@@ -2242,6 +2365,11 @@ function inspect(hit)
       'Add light here',
       'A ray-traced light at this point that rides on this part in game (a light preset for the part, in the mod\'s roguesq_lights.json)',
       () => lightsAdd(hit)
+    ],
+    [
+      info.glow ? 'Stop it glowing' : 'Make it glow',
+      info.glow ? `Material ${info.matName || '#' + info.index} goes back to its own shading` : `Every part using material ${info.matName || '#' + info.index} draws at full brightness in game, lit or in shade, and with ray tracing on casts no shadow and shows in reflections`,
+      () => setMaterialGlow(selected, info.index, !info.glow)
     ]
   ];
 
@@ -2269,7 +2397,7 @@ function showInfo(card, x, y)
 {
   const el = $('info');
   if (!card) { el.hidden = true; return; }
-  el.innerHTML = `<b>${esc(card.title)}</b>` + card.rows.filter(Boolean).map(([k, v]) => `<span>${k}</span><span>${v}</span>`).join('');
+  el.innerHTML = `<b${card.tip ? ` title="${esc(card.tip)}"` : ''}>${esc(card.title)}</b>` + card.rows.filter(Boolean).map(([k, v]) => `<span>${k}</span><span>${v}</span>`).join('');
 
   if (card.help && eventHelpUrl(card.help))
     el.append(eventHelpLink(card.help));
@@ -2328,7 +2456,7 @@ function showInfo(card, x, y)
     const note = elem('small', { className: 'shotNote' });
 
     el.append(note);
-    triggerEffect(card.place, selected).then((t) => (note.textContent = t));
+    triggerEffect(card.place, selected).then((t) => (t.text ? Object.assign(note, { textContent: t.text, title: t.tip ?? '' }) : note.remove()));
   }
 
   const r = canvas.getBoundingClientRect();
@@ -2338,7 +2466,7 @@ function showInfo(card, x, y)
   el.hidden = false;
 }
 
-// What a trigger that plays no line does: who reads the flags and counters it writes (the level script, or DAT items gated on them:
+// What a trigger that plays no line does, in words ({ text, tip }: the tip names the flags and counters): who reads the ones it writes (the level script, or DAT items gated on them:
 // units and restart points by flag +0x60 / counter +0x64 (isDatItemConditionMet), other triggers, objective arrows).
 async function triggerEffect(it, dir)
 {
@@ -2347,12 +2475,16 @@ async function triggerEffect(it, dir)
   const flags = [...new Set(acts.map((a) => a.flag).filter(Boolean))];
   const counters = [...new Set(acts.map((a) => a.counter).filter(Boolean))];
 
+  const subject = p ? 'An NPC passing it' : (it.onExit?.flag || it.onExit?.counter ? 'Entering or leaving it' : 'Entering it');
+
+  // A path event's own work is its order to the NPC (hold, attack); only the flags and counters it sets need a note.
   if (!flags.length && !counters.length)
-    return 'It sets no flag or counter, so it does nothing.';
+    return { text: p ? '' : `${subject} does nothing.` };
 
   const reads = new Set(globalThis.RS64_TRIGGER_VOICES?.[(modLevelOf(dir) ? 'lv_' + modLevelOf(dir).template.toString(36) : dir.split('/').pop())]?.reads ?? []);
   const dv = await rom.read(dir + '/dat');
-  const users = [];
+  const brings = [];
+  const starts = [];
 
   for (const x of parseDAT(dv).items)
   {
@@ -2369,19 +2501,33 @@ async function triggerEffect(it, dir)
     ].filter(Boolean);
 
     if (uses.some((u) => flags.includes(u.flag) || counters.includes(u.counter)))
-      users.push(x.name || TYPES[markerKind(x)]?.label || 'item');
+      (gate && isUnit(x) ? brings : starts).push(x.name ? { name: x.name } : { kind: TYPES[markerKind(x)]?.label ?? 'item' });
   }
 
   const what = [...flags.map((f) => `flag ${f}`), ...counters.map((c) => `counter ${c}`)].join(' and ');
   const script = [...flags.map((f) => 'b' + f), ...counters.map((c) => 'c' + c)].some((k) => reads.has(k));
 
-  if (users.length)
-    return `It plays no voice line; ${what} enables ${users.slice(0, 4).join(', ')}${users.length > 4 ? ` and ${users.length - 4} more` : ''}${script ? ', and the level script reads it' : ''}.`;
+  const tip = `It sets ${what}`;
 
-  if (script)
-    return `It plays no voice line; the level script reads ${what} (objectives, camera cuts or spawns).`;
+  // Units it brings into the level, then what else it switches on (objective arrows, path events, other triggers), then the script.
+  // Unnamed things (path events, mostly) only say what kind they are, so they count up by kind instead of listing the same word again.
+  const kinds = [...Map.groupBy(starts.filter((x) => x.kind), (x) => x.kind)].map(([k, l]) => `${l.length} ${k.toLowerCase()}`);
+  const named = starts.filter((x) => x.name).map((x) => x.name);
 
-  return `It has no effect: nothing in the level or its script reads ${what}.`;
+  const parts = [
+    brings.length && listed('spawns', brings.map((x) => x.name ?? x.kind)),
+    named.length && listed('switches on', named),
+    kinds.length && `switches on ${kinds.join(', ')}`,
+    script && 'sets off something in the mission script (an objective, camera cut or spawn)'
+  ].filter(Boolean);
+
+  return parts.length ? {
+    text: `${subject} ${parts.join('\nand ')}`,
+    tip
+  } : {
+    text: `${subject} does nothing: nothing in the level or its mission script waits for it.`,
+    tip
+  };
 }
 
 // A press that barely moves is a click; anything longer is an orbit drag.
@@ -2398,11 +2544,24 @@ canvas.addEventListener('pointerup', (e) => {
 
   const hit = pick(e, visibleMarkers());
   const r = canvas.getBoundingClientRect();
+  const card = hit && inspect(hit);
 
-  showInfo(hit && inspect(hit), e.clientX - r.left + 12, e.clientY - r.top + 12);
+  // A click on what the open card describes closes it.
+  if (infoOpenAtPress && card && card.title === infoTitle)
+  {
+    $('info').hidden = true;
+    infoTitle = null;
+
+    return;
+  }
+
+  infoTitle = card?.title ?? null;
+  showInfo(card, e.clientX - r.left + 12, e.clientY - r.top + 12);
 });
 
-// A right-click while a card is open only closes it. The press itself closes the card (the camera controls start), so its state is read before them.
+let infoTitle = null;
+
+// Whether a card was open at the press: the press itself closes it (the camera controls start), so its state is read before them.
 let infoOpenAtPress = false;
 
 canvas.addEventListener('pointerdown', () => (infoOpenAtPress = !$('info').hidden), true);
@@ -2413,22 +2572,31 @@ canvas.addEventListener('contextmenu', (e) => {
   if (levelCompose)
     return;
 
-  if (root && wasClick(e, 2) && infoOpenAtPress)
-  {
-    $('info').hidden = true;
-
+  if (!root || !wasClick(e, 2))
     return;
+
+  let title = editPickList(e);
+
+  if (!title)
+  {
+    const r = canvas.getBoundingClientRect();
+
+    // In a crawl the backdrop is picked first: it is drawn behind everything but sits past the stars plane.
+    const hit = (cut?.crawl?.backdrop?.visible && pick(e, [cut.crawl.backdrop])) || pick(e, [root]);
+    const card = hit && inspect(hit);
+
+    title = card?.title ?? null;
+    showInfo(card, e.clientX - r.left + 12, e.clientY - r.top + 12);
   }
 
-  if (!root || !wasClick(e, 2) || editPickList(e))
-    return;
+  // A right-click on what the open card already shows closes it; anywhere else opens that spot's card.
+  if (infoOpenAtPress && title && title === infoTitle)
+  {
+    $('info').hidden = true;
+    title = null;
+  }
 
-  const r = canvas.getBoundingClientRect();
-
-  // In a crawl the backdrop is picked first: it is drawn behind everything but sits past the stars plane.
-  const hit = (cut?.crawl?.backdrop?.visible && pick(e, [cut.crawl.backdrop])) || pick(e, [root]);
-
-  showInfo(hit && inspect(hit), e.clientX - r.left + 12, e.clientY - r.top + 12);
+  infoTitle = title;
 });
 
 function setRoot(obj) {
@@ -2454,6 +2622,8 @@ function setRoot(obj) {
   root = obj;
   anim = null;
   setupExhaust(null);
+  lamps.forEach((l) => l.sprite.material.dispose());
+  lamps = [];
   effect = null;
   sky = null;
   skyColor = null;

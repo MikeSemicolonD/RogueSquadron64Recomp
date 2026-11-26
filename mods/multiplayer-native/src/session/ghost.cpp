@@ -5,6 +5,7 @@
 #include "net/net_link.h"
 #include "util/debug_logs.h"
 #include "util/rdram_words.h"
+#include "util/settings_file.h"
 #include "mp_host.h"
 #include "rs64/camera_shots.h"
 #include "rs64/mp_channel.h"
@@ -163,28 +164,41 @@ void load_net_config() {
     }
 
     loaded = true;
-    std::ifstream f(net_config_path());
+
+    const std::string path = net_config_path();
+    std::ifstream f(path);
 
     if (!f.is_open())
     {
         return;
     }
 
-    try {
-        nlohmann::json j;
-        f >> j;
-        g().editor.load(j.value("last_address", std::string{}));
-        g().last_host = j.value("last_host", std::string{});
-        g().relay_server = j.value("relay_server", std::string{});
-        g().host_name.name = rs64::net::NameEditor::clean(j.value("host_name", std::string{}));
-        const std::string pin = j.value("host_password", std::string{});
-        g().host_pin_set = rs64::net::CodeEditor::valid(pin);
-        g().host_pin.load(pin);
-        g().friendly_fire = j.value("friendly_fire", false);
-        const int port = j.value("port", 27064);
-        config_port() = (port > 0 && port < 65536) ? port : 27064;
-    } catch (...) {
+    nlohmann::json j;
+
+    if (!rs64::settings::parse_file(f, path, j) || !j.is_object())
+    {
+        f.close();
+        rs64::settings::keep_bad_file(path);
+
+        return;
     }
+
+    using rs64::settings::value_or;
+
+    g().editor.load(value_or(j, "last_address", std::string{}));
+    g().last_host = value_or(j, "last_host", std::string{});
+    g().relay_server = value_or(j, "relay_server", std::string{});
+    g().host_name.name = rs64::net::NameEditor::clean(value_or(j, "host_name", std::string{}));
+
+    const std::string pin = value_or(j, "host_password", std::string{});
+
+    g().host_pin_set = rs64::net::CodeEditor::valid(pin);
+    g().host_pin.load(pin);
+    g().friendly_fire = value_or(j, "friendly_fire", false);
+
+    const int port = value_or(j, "port", 27064);
+
+    config_port() = (port > 0 && port < 65536) ? port : 27064;
 }
 
 void save_net_config()
@@ -206,11 +220,8 @@ void save_net_config()
     j["host_password"] = s.host_pin_set ? s.host_pin.code() : std::string{};
     j["friendly_fire"] = s.friendly_fire;
     j["port"] = config_port();
-    std::ofstream f(net_config_path());
 
-    if (f.is_open()) {
-        f << j.dump(2) << "\n";
-    }
+    rs64::settings::write_file(net_config_path(), j.dump(2) + "\n");
 }
 
 // Starts (or restarts) the link as host or client and the lobby handshake on top of it.
@@ -220,6 +231,7 @@ void lobby_start(const rs64::net::LinkConfig& cfg)
     Ghost& s = g();
     s.link.stop();
     s.remote_craft = -1;
+    s.remote_ship.clear();
     s.player = cfg.role == rs64::net::Role::Host ? 0 : 1;
     s.was_connected = false;
     s.seen_connects = s.link.connect_count();
@@ -899,6 +911,18 @@ void drain()
 
             break;
         }
+        case rs64::net::Msg::Ship: {
+            std::string id;
+
+            if (rs64::net::decode_ship(m.data(), m.size(), &id))
+            {
+                s.remote_ship = id;
+
+                fprintf(stderr, "[lobby] partner's craft is the ship %s\n", id.empty() ? "(stock)" : id.c_str());
+            }
+
+            break;
+        }
         case rs64::net::Msg::Browse: {
             uint8_t level = 0, state = 0;
 
@@ -919,6 +943,7 @@ void drain()
 
                 if (craft != 0xFF) {
                     s.remote_craft = craft;
+                    s.remote_ship.clear();
                 } else if (s.in_hangar && !s.left_sent) {
                     // They went back to mission select: follow them there.
                     s.follow_out = true;
@@ -2046,6 +2071,9 @@ extern "C" void rs64_ghost_frame(uint8_t* rdram, recomp_context* ctx)
             // The walk cycle position (+0x88, 0 .. 1).
             const float walk = rf(rdram, ext + 0x88u);
             out.walk = walk >= 0.0f && walk <= 1.0f ? walk : 0.0f;
+        } else if (const float special = rs64_ghost_ships_v3() ? rs64_ghost_ships_v3()->special() : -1.0f; special >= 0.0f) {
+            // A hangar ship's special (its S-foils, boost or own clip), 0 rest .. 1 engaged, sent as the S-foils are.
+            out.foil = (uint8_t)std::lround((1.0f - std::min(special, 1.0f)) * 250.0f);
         } else if (ext && rb(rdram, 0x80130B41u) == 0) {
             const float t = std::clamp(rf(rdram, ext + 4u), 0.0f, 1.0f);
             out.foil = (uint8_t)std::lround((1.0f - t) * 250.0f);

@@ -20,5 +20,3 @@ How to mod with the [RS64 Explorer](https://mikesemicolond.github.io/RogueSquadr
 ## More
 
 - [WebMCP tools for AI agents](Explorer-WebMCP)
-
-Each guide ends with a **Not yet possible** list.

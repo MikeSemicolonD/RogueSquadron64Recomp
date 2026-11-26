@@ -70,7 +70,7 @@ function drawAnnotations(list)
 
   for (const a of list)
   {
-    const s = { color: a.color ?? '#ff4f2e', textColor: a.textColor ?? '#fff', outline: a.outline ?? 2, outlineColor: a.outlineColor ?? 'rgba(0,0,0,.6)' };
+    const s = { color: a.color ?? '#ff4f2e', textColor: a.textColor ?? '#fff', outline: a.outline ?? 3, outlineColor: a.outlineColor ?? '#ffffff' };
 
     if (a.label != null)
     {

@@ -424,7 +424,7 @@ async function buildCutFx(data, world, nodes, impacts = [])
   await lightsCutFx([kit.spr, kit.fire, kit.ion2, kit.smoke, kit.wtrAnm, kit.ionx, kit.fireHi].flat().map((f) => f.key), group);
 
   const actorAt = (i, t) => {
-    poseCutscene(t / data.length);
+    poseCutscene(data.frameAt(t) / data.frames);
     world.updateMatrixWorld(true);
 
     const p = world.worldToLocal(nodes[i].getWorldPosition(new THREE.Vector3()));
@@ -530,7 +530,7 @@ async function buildCutFx(data, world, nodes, impacts = [])
       continue;
 
     const i = e.p[0] & 0xff;
-    const at = e.frame / data.fps;
+    const at = data.realAt(e.frame);
 
     if (!nodes[i])
       continue;
@@ -570,7 +570,7 @@ async function buildCutFx(data, world, nodes, impacts = [])
     {
       const fire = (e.p[1] & 0xff) === 2;
       const next = data.events.find((n) => n.type === 16 && (n.p[0] & 0xff) === i && n.frame > e.frame);
-      const end = Math.min(next ? next.frame / data.fps : data.length, at + 100 / 8);
+      const end = Math.min(data.realAt(next ? next.frame : data.frames), at + 100 / 8);
       const path = [];
 
       for (let t = at; t <= end + 1; t += 0.1)
@@ -670,7 +670,7 @@ async function buildCutFx(data, world, nodes, impacts = [])
 
   for (const e of data.events.filter((ev) => ev.type === 15 && ev.p[0] <= 7))
   {
-    const at = e.frame / data.fps;
+    const at = data.realAt(e.frame);
     const c = e.p[0];
 
     if (c === 0)
@@ -922,22 +922,47 @@ function poseFireworks(fw, T) {
     fw.pool[n].visible = false;
 }
 
-// big_cor: u16 format 0x8001 (CI8, RGBA palette), u16 0, u16 w, u16 h, u32 0, 256 RGBA palette entries, then w * h indices.
-function ceremonyPlanet(dv)
+// data/backdrop images: u16 format, u16 0, u16 w, u16 h, u32 0, then rows top first. 0x8001: 256 RGBA palette entries and w * h indices (big_cor,
+// f5). 0: 16 RGB palette entries and two 4-bit indices a byte, high first (nin). 5: one intensity byte a texel, alpha the same (factor).
+function backdropRGBA(dv)
 {
+  const fmt = dv.getUint16(0);
   const w = dv.getUint16(4);
   const h = dv.getUint16(6);
-  const px = 12 + 1024;
+  const rgba = new Uint8Array(w * h * 4);
+  const at = (o) => dv.getUint8(o);
 
-  if (dv.getUint16(0) !== 0x8001 || px + w * h > dv.byteLength)
+  if (fmt === 0x8001 && 12 + 1024 + w * h <= dv.byteLength)
+    for (let i = 0; i < w * h; i++)
+      rgba.set(new Uint8Array(dv.buffer, dv.byteOffset + 12 + at(12 + 1024 + i) * 4, 4), i * 4);
+  else if (fmt === 0 && 60 + (w * h) / 2 <= dv.byteLength)
+    for (let i = 0; i < w * h; i++)
+    {
+      const k = (at(60 + (i >> 1)) >> (i & 1 ? 0 : 4)) & 15;
+
+      rgba.set([at(12 + k * 3), at(13 + k * 3), at(14 + k * 3), 255], i * 4);
+    }
+  else if (fmt === 5 && 12 + w * h <= dv.byteLength)
+    for (let i = 0; i < w * h; i++)
+    {
+      const b = at(12 + i);
+
+      rgba.set([b, b, b, b], i * 4);
+    }
+  else
     return null;
 
-  const rgba = new Uint8Array(w * h * 4);
+  return { w, h, rgba };
+}
 
-  for (let i = 0; i < w * h; i++)
-    rgba.set(new Uint8Array(dv.buffer, dv.byteOffset + 12 + dv.getUint8(px + i) * 4, 4), i * 4);
+function ceremonyPlanet(dv)
+{
+  const img = backdropRGBA(dv);
 
-  const tex = new THREE.DataTexture(rgba, w, h);
+  if (!img)
+    return null;
+
+  const tex = new THREE.DataTexture(img.rgba, img.w, img.h);
 
   tex.flipY = true;
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -945,6 +970,71 @@ function ceremonyPlanet(dv)
 
   // Transparent (it fades) so it draws after the opaque scene; parked near the far plane, the depth test keeps it behind every model.
   return new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, fog: false }));
+}
+
+const CUT_NO_HIT = new Set(['factor', 'end_medal']);
+
+// The Factor 5 logo's screen images (setupCutsceneLevel loads them, computeCutsceneScreenScale places them each frame): the Nintendo 64 logo
+// before frame 95, then FACTOR over the 5 from frame 996. Each is its texel size x k / 240 of the 4:3 screen, centred (FACTOR dy lower).
+const LOGO_IMAGES = [
+  { name: 'nin', kx: 0.28, ky: 0.37, dy: 0, show: (f) => f < 95 },
+  { name: 'f5', kx: 0.38, ky: 0.47, dy: 0, show: (f) => f >= 996 },
+  { name: 'factor', kx: 0.34, ky: 0.48, dy: 5 / 372, show: (f) => f >= 996 }
+];
+
+async function buildLogoImages()
+{
+  const out = [];
+
+  for (const [k, im] of LOGO_IMAGES.entries())
+  {
+    const img = rom.assets.has('data/backdrop/' + im.name) && backdropRGBA(await rom.read('data/backdrop/' + im.name));
+
+    if (!img)
+      continue;
+
+    const tex = new THREE.DataTexture(img.rgba, img.w, img.h);
+
+    tex.flipY = true;
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.minFilter = tex.magFilter = THREE.LinearFilter;
+    tex.needsUpdate = true;
+
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, fog: false }));
+
+    mesh.renderOrder = -10 + k;
+    mesh.frustumCulled = false;
+    mesh.userData.logo = { ...im, w: img.w, h: img.h };
+    camera.add(mesh);
+    out.push(mesh);
+  }
+
+  return out;
+}
+
+// The images size against the letterbox band (frame-matched: the game's window shows the band). The scene's clear and fog colour (0x80136E18) starts
+// white and computeCutsceneScreenScale fades it to black over frames 745-775.
+function poseLogoImages(f)
+{
+  const shade = 1 - THREE.MathUtils.clamp((f - 745) / 30, 0, 1);
+
+  scene.background?.setScalar?.(shade);
+  scene.fog?.color.setScalar(shade);
+
+  const d = camera.far * 0.9;
+  const r = canvas.getBoundingClientRect();
+  const band = Math.min(r.height, r.width / cut.picAspect);
+  const hs = 2 * d * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) * (band / r.height);
+  const ws = (hs * 4) / 3;
+
+  for (const m of cut.logoImages)
+  {
+    const L = m.userData.logo;
+
+    m.visible = L.show(f);
+    m.scale.set((ws * L.w * L.kx) / 240, (hs * L.h * L.ky) / 240, 1);
+    m.position.set(0, -L.dy * hs, -d);
+  }
 }
 
 // tickCutsceneCameraFromTimeline 0x800AD690: big_cor at scale 640 * 0.8 / 240 by 1 in 640 x 240 screen units, centred; shown while frame < 420
@@ -977,6 +1067,16 @@ function endCutscene()
   if (cut.planet)
     camera.remove(cut.planet);
 
+  for (const m of cut.logoImages ?? [])
+  {
+    camera.remove(m);
+    m.material.map.dispose();
+    m.material.dispose();
+  }
+
+  if (cut.background !== undefined)
+    scene.background = cut.background;
+
   if (cut.crawl) {
     scene.fog = null;
 
@@ -988,7 +1088,8 @@ function endCutscene()
     $('insCut').querySelector('h4').textContent = 'Cutscene';
   }
 
-  hoverBox.visible = selBox.visible = false;
+  boxAround(hoverBox, null);
+  boxAround(selBox, null);
 
   if (gizmo.object === editProxy && cutTrack) {
     gizmo.detach();
@@ -1103,12 +1204,12 @@ function loadCutSfx(c)
   const buf = (id) => (bufs.has(id) ? bufs.get(id) : bufs.set(id, sfxBuffer(id)).get(id));
 
   c.sfxCues = c.data.events.filter((e) => e.type === 3).map((e) => ({
-    at: e.frame / c.data.fps,
+    at: c.data.realAt(e.frame),
     buf: buf((romBytes[CUT_SFX + e.p[0] * 2] << 8) | romBytes[CUT_SFX + e.p[0] * 2 + 1]),
     vol: ((e.p[1] & 0xff) || 0x7f) / 127,
     pan: (((e.p[2] & 0xff) || 0x40) - 64) / 64,
   })).concat(c.data.events.filter((e) => e.type === 8 && (e.p[3] & 0xffff)).map((e) => ({
-    at: e.frame / c.data.fps,
+    at: c.data.realAt(e.frame),
     buf: buf(e.p[3] & 0xffff),
     vol: 1,
     pan: 0
@@ -1223,11 +1324,11 @@ const cutSong = (e) => e.song ?? ((romBytes[CUT_SONGS + e.p[0] * 4] << 8) | romB
 
 function cutMusicCues(data)
 {
-  const stops = data.events.filter((e) => e.type === 2).map((e) => e.frame / data.fps);
+  const stops = data.events.filter((e) => e.type === 2).map((e) => data.realAt(e.frame));
   const cues = data.events.filter((e) => e.type === 1).map((e) => {
     const id = cutSong(e);
 
-    return { at: e.frame / data.fps, vol: (e.p[1] & 0xff || 0x7f) / 127, row: audioBank?.music.find((m) => m.index === id) };
+    return { at: data.realAt(e.frame), vol: (e.p[1] & 0xff || 0x7f) / 127, row: audioBank?.music.find((m) => m.index === id) };
   }).filter((c) => c.row).sort((a, b) => a.at - b.at);
 
   cues.forEach((c, i) => (c.end = Math.min(cues[i + 1]?.at ?? Infinity, ...stops.filter((s) => s > c.at))));
@@ -1340,7 +1441,7 @@ async function loadCutAudio(path)
   if (c.playing)
     await audioCtx.resume();
 
-  startCutAudio(c.t * c.data.length);
+  startCutAudio(c.data.realAt(c.t * c.data.frames));
 
   // Songs render on first use (a few seconds each); sound restarts at the current time as each one becomes ready.
   for (const cue of c.cues) {
@@ -1365,7 +1466,62 @@ function cutNow() {
   if (cut.audioAt != null && audioCtx && cut.sources?.length)
     return cut.audioT0 + (audioCtx.currentTime - cut.audioAt);
 
-  return cut.t * cut.data.length;
+  return cut.data.realAt(cut.t * cut.data.frames);
+}
+
+// cinematicLoopBody advances a cutscene by dt x speed. The special cutscenes take the speed per frame from their scene function: the Factor 5
+// logo's (computeCutsceneScreenScale) runs it at 2 before frame 80, 1 to 110, ramps to 2 by 120, holds 2 to frame 770, then 1.
+const CUT_SPEED = { 'data/cuts/id19_special': (f) => (f < 80 ? 2 : (f < 110 ? 1 : (f <= 120 ? 1 + (f - 110) / 10 : (f < 770 ? 2 : 1)))) };
+
+// data.realAt(frame) is the game time (seconds) when the cutscene reaches a file frame, data.frameAt(seconds) the frame at a game time and
+// data.realLength the whole file's. Audio, effects and the clock run on game time, keys on file frames.
+function cutTiming(data, path)
+{
+  const speed = CUT_SPEED[path];
+  const n = data.frames;
+
+  if (!speed)
+  {
+    data.realAt = (f) => f / data.fps;
+    data.frameAt = (s) => s * data.fps;
+    data.realLength = data.length;
+
+    return;
+  }
+
+  const at = new Float64Array(n + 1);
+
+  for (let f = 0; f < n; f++)
+    at[f + 1] = at[f] + 1 / (data.fps * speed(f));
+
+  data.realAt = (f) => {
+    const c = Math.min(Math.max(f, 0), n);
+    const i = Math.min(Math.floor(c), n - 1);
+
+    return at[i] + (c - i) * (at[i + 1] - at[i]);
+  };
+
+  data.frameAt = (s) => {
+    if (s >= at[n])
+      return n;
+
+    let lo = 0;
+    let hi = n;
+
+    while (hi - lo > 1)
+    {
+      const mid = (lo + hi) >> 1;
+
+      if (at[mid] <= s)
+        lo = mid;
+      else
+        hi = mid;
+    }
+
+    return Math.min(n, lo + Math.max(0, s - at[lo]) / (at[lo + 1] - at[lo] || 1));
+  };
+
+  data.realLength = at[n];
 }
 
 function syncCutGains() {
@@ -1402,7 +1558,9 @@ async function showCutscene(path)
   const sq = path.match(/^seq:(.+):(\d+)$/);
   const mc = modLevels.find((l) => path === `data/cuts/${l.folder}_intro` || path === `data/cuts/${l.folder}_extro`);
   const n = sq ? parseInt(sq[1].slice(-1), 36) : (mc ? mc.template : +path.match(/id(\d+)_/)[1]);
-  const lv = sq ? sq[1] : (mc ? 'data/level/' + mc.folder : (n <= 15 ? 'data/level/lv_' + n.toString(36) : null));
+
+  // The Factor 5 logo (id19) plays over its own level, lv_j: the snow field, the LucasArts sign and the rest of its scenery.
+  const lv = sq ? sq[1] : (mc ? 'data/level/' + mc.folder : (n <= 15 || n === 19 ? 'data/level/lv_' + n.toString(36) : null));
 
   // The medal ceremony (cinematicLoopBody(3, 2), medal byte 0x80130B38) loads lv_3 but forces sky index 0x11 -> sky_5 (0x8005BD70).
   const ceremony = path.endsWith('id3_special');
@@ -1436,6 +1594,9 @@ async function showCutscene(path)
   renderList();
 
   const data = sq ? await buildSequenceData(lv, +sq[2]) : parseCutscene(await rom.read(path));
+
+  cutTiming(data, path);
+
   const index = await buildObjectIndex();
   const world = root;
 
@@ -1596,6 +1757,7 @@ async function showCutscene(path)
   // The file as stored, for editing (data above may carry load-time rewrites: medal tier, craft swap). A sequence edits its level's
   // camera records; its built data stands in for the file on the timeline.
   cut.file = sq ? data : parseCutscene(await rom.read(path));
+  cutTiming(cut.file, path);
   $('cutEdit').hidden = false;
   $('cutInspector').hidden = !cutEditing;
   $('cutPanel').classList.toggle('editing', !$('cutInspector').hidden);
@@ -1623,6 +1785,13 @@ async function showCutscene(path)
     if (cut.planet)
       camera.add(cut.planet);
   }
+
+  if (path === 'data/cuts/id19_special')
+    cut.logoImages = await buildLogoImages();
+
+  // The game clears a cutscene's frame to black; the view's own colour shows only outside one.
+  cut.background = scene.background;
+  scene.background = new THREE.Color(0);
 
   cut.foils = data.actors.flatMap((_, i) => {
     const model = nodes[i].userData.model;
@@ -1742,6 +1911,7 @@ async function showCutscene(path)
 
         cut.shots.push({
           at: e.frame / data.frames,
+          real: data.realAt(e.frame),
           pos,
           dir,
           speed,
@@ -1765,7 +1935,8 @@ async function showCutscene(path)
   poseCutscene(0);
   world.updateMatrixWorld(true);
 
-  const radius = nodes.map((nd) => nd.userData.model && new THREE.Box3().setFromObject(nd.userData.model.mesh).getSize(tmp).length() * 0.3);
+  // The logos are scenery the game's bolts fly past: as a sphere the wide Factor 5 sign swallowed its turrets' muzzles.
+  const radius = nodes.map((nd, i) => !CUT_NO_HIT.has(data.actors[i]?.name) && nd.userData.model && new THREE.Box3().setFromObject(nd.userData.model.mesh).getSize(tmp).length() * 0.3);
 
   const shown = (nd) => {
     for (let o = nd; o && o !== world; o = o.parent)
@@ -1808,7 +1979,7 @@ async function showCutscene(path)
 
     for (let k = 1; k <= Math.round(s.life * 30) && !hit; k++)
     {
-      poseCutscene(s.at + k / 30 / data.length);
+      poseCutscene(data.frameAt(s.real + k / 30) / data.frames);
       world.updateMatrixWorld(true);
 
       const p = s.path ? s.path[k - 1].p : s.pos.clone().addScaledVector(s.dir, (k / 30) * s.speed);
@@ -1819,14 +1990,14 @@ async function showCutscene(path)
           continue;
 
         s.life = k / 30;
-        impacts.push({ at: s.at * data.length + s.life, pos: p, cat: s.cat });
+        impacts.push({ at: s.real + s.life, pos: p, cat: s.cat });
         hit = true;
         break;
       }
     }
 
     if (!hit && s.path)
-      impacts.push({ at: s.at * data.length + s.life, pos: s.path[s.path.length - 1].p, cat: s.cat });
+      impacts.push({ at: s.real + s.life, pos: s.path[s.path.length - 1].p, cat: s.cat });
   }
 
   // World Devastator feet (spawnNamedTexturedEmitterNpc 0x8007D470 for asset type 0xE): at hardpoints "01"-"04" an npcVortexUpdate column
@@ -1894,7 +2065,7 @@ async function showCutscene(path)
   }
 
   cut.fireworks = await buildFireworks(data.events.filter((e) => e.type === 15 && FIREWORK_EMITTERS[e.p[0]]).map((e) => ({
-    at: e.frame / data.fps,
+    at: data.realAt(e.frame),
     ...FIREWORK_EMITTERS[e.p[0]]
   })), world, weapons, counts);
   cut.fx = await buildCutFx(data, world, nodes, impacts);
@@ -1916,7 +2087,7 @@ async function showCutscene(path)
 
   stats = {
     cutscene: pick?.value === `cut:${path}` ? pick.textContent : (path.endsWith('/id19_special') ? 'Factor 5 logo' : path.split('/').pop()),
-    length: `${data.length.toFixed(1)} s`,
+    length: `${data.realLength.toFixed(1)} s`,
     actors: data.actors.length,
     models: data.actors.filter((a) => a.model).length,
     triangles: counts.tris
@@ -1964,7 +2135,7 @@ function poseCutscene(t)
   // Laser bolts fly straight from their muzzle at their speed for 1.5 s (laser NPC tick: pos += vel * dt).
   for (const s of cut.shots)
   {
-    const dt = (t - s.at) * data.length;
+    const dt = data.realAt(t * data.frames) - s.real;
 
     s.mesh.visible = dt >= 0 && dt < s.life;
 
@@ -1989,7 +2160,7 @@ function poseCutscene(t)
       continue;
 
     s.glow.position.set(_bp.x, levelHeight(_bp.x, _bp.z) - 0.03, _bp.z);
-    s.glow.material.color.copy(s.colors[Math.floor((t - s.at) * data.length * 30) % 16]);
+    s.glow.material.color.copy(s.colors[Math.floor(dt * 30) % 16]);
     s.glow.material.opacity = 0.45 * (1 - Math.max(0, above) / 2);
   }
 
@@ -2021,14 +2192,17 @@ function poseCutscene(t)
   if (cut.terrain || cut.planet)
     poseCeremony(t * F);
 
+  if (cut.logoImages)
+    poseLogoImages(t * F);
+
   if (cut.fireworks)
-    poseFireworks(cut.fireworks, t * data.length);
+    poseFireworks(cut.fireworks, data.realAt(t * data.frames));
 
   if (cut.fx)
-    poseCutFx(cut.fx, t * data.length);
+    poseCutFx(cut.fx, data.realAt(t * data.frames));
 
   if (cut.vortices?.length)
-    poseVortices(t * data.length);
+    poseVortices(data.realAt(t * data.frames));
 
   for (const [map, s] of cut.sprites ?? [])
   {
@@ -2087,7 +2261,7 @@ function applyCutscene(dt)
 
   if (cut.playing)
   {
-    cut.t = cut.sources.length && audioCtx?.state === 'running' ? cutNow() / data.length : cut.t + dt / data.length;
+    cut.t = data.frameAt(cut.sources.length && audioCtx?.state === 'running' ? cutNow() : data.realAt(cut.t * data.frames) + dt) / data.frames;
 
     if (cut.t >= cut.end && $('cutLoop').checked) {
       cut.t = 0;
@@ -2120,12 +2294,12 @@ function applyCutscene(dt)
     syncCutModeButtons();
   }
 
-  $('cutTimeVal').textContent = `${(cut.t * data.length).toFixed(1)} s`;
+  $('cutTimeVal').textContent = `${data.realAt(cut.t * data.frames).toFixed(1)} s`;
 
   if (cut.tlHead)
   {
     cut.tlHead.style.left = `${cut.t * 100}%`;
-    cut.tlHead.firstChild.textContent = `${(cut.t * data.length).toFixed(1)} s`;
+    cut.tlHead.firstChild.textContent = `${data.realAt(cut.t * data.frames).toFixed(1)} s`;
     cut.tlHead.classList.toggle('atStart', cut.t < 0.03);
     cut.tlHead.classList.toggle('atEnd', cut.t > 0.97);
   }
@@ -2208,7 +2382,7 @@ async function reopenCutscene()
 
   cut.t = t;
   $('cutTime').value = t;
-  startCutAudio(t * cut.data.length);
+  startCutAudio(cut.data.realAt(t * cut.data.frames));
 
   if (playing)
     return;
@@ -2498,6 +2672,8 @@ async function showCrawl(which, keep = null)
     // Song 2 from the start (runModelViewerSoundDemo); the fade (type 10 stands in for the exit) once the first craft is 98% along.
     events: [{ type: 1, frame: 0, p: [0, 0x7f, 0, 0], song: 2 }, { type: 10, frame: Math.round(CRAWL_T.done * fps), p: [0, 0, 0, 0] }]
   };
+
+  cutTiming(data, '');
 
   cut = {
     data,
@@ -3104,11 +3280,12 @@ function buildCutTimeline(data)
   tl.textContent = '';
 
   const ruler = elem('div', { className: 'tlRuler' });
-  const step = data.length > 40 ? 10 : (data.length > 15 ? 5 : 2);
+  const step = data.realLength > 40 ? 10 : (data.realLength > 15 ? 5 : 2);
 
-  for (let s = 0; s <= data.length; s += 1)
+  // Game seconds: a cutscene the game speeds up has its seconds closer together where it runs faster.
+  for (let s = 0; s <= data.realLength; s += 1)
   {
-    const x = `${(s / data.length) * 100}%`;
+    const x = `${(data.frameAt(s) / data.frames) * 100}%`;
 
     ruler.append(elem('i', { style: `left:${x}` }));
 
@@ -3265,7 +3442,7 @@ function buildClipLanes(tracks)
 
     // Tall rows (the panel dragged taller) have room for each clip's description.
     el.textContent = c.end > c.start ? (cutRowH >= 20 && c.kind !== 'shot' && info ? info[2] : name) : '';
-    el.title = c.kind === 'shot' ? `${name}: ${(c.start / data.fps).toFixed(2)} s to ${(c.end / data.fps).toFixed(2)} s` : `${(c.start / data.fps).toFixed(2)} s: ${info?.[2] ?? c.kind}`;
+    el.title = c.kind === 'shot' ? `${name}: ${data.realAt(c.start).toFixed(2)} s to ${data.realAt(c.end).toFixed(2)} s` : `${data.realAt(c.start).toFixed(2)} s: ${info?.[2] ?? c.kind}`;
     el.style.background = c.kind === 'shot' ? (i % 2 ? '#c99a36' : '#e8b84a') : info?.[1] ?? '#9aa3b5';
 
     if (!c.lockStart && c.startEvent && c.end > c.start)
@@ -3310,7 +3487,7 @@ function buildClipLanes(tracks)
       cutAudioMenu(e.clientX, e.clientY, Math.round(THREE.MathUtils.clamp((e.clientX - r.left) / r.width, 0, 1) * F));
     };
 
-  // An Audio list row dragged here (by its grip) adds its event at the drop point.
+  // An Audio list row dragged here adds its event at the drop point.
   if (!cut.seq)
     listDropTarget(tracks.audio, () => listDrag?.audio && cutEditing, (e) => {
       const r = tracks.audio.getBoundingClientRect();
@@ -3351,7 +3528,7 @@ function buildMarkerLanes(data, tracks, at)
   shots.forEach(([a, b, cam], i) => tracks.camera.append(elem('div', {
     className: 'tlBand',
     textContent: `Cam ${cam}`,
-    title: `Camera ${cam}: ${(a / data.fps).toFixed(1)} s to ${(b / data.fps).toFixed(1)} s`,
+    title: `Camera ${cam}: ${data.realAt(a).toFixed(1)} s to ${data.realAt(b).toFixed(1)} s`,
     style: `left:${at(a)};width:calc(${at(b - a)} - 1px);background:${i % 2 ? '#c99a36' : '#e8b84a'}`,
   })));
 
@@ -3379,7 +3556,7 @@ function buildMarkerLanes(data, tracks, at)
       m.style.borderColor = color;
     }
 
-    m.dataset.label = `${(e.frame / data.fps).toFixed(2)} s (frame ${e.frame}): ${label}${after ? ' (after the cutscene: plays once gameplay starts)' : ''}`;
+    m.dataset.label = `${data.realAt(e.frame).toFixed(2)} s (frame ${e.frame}): ${label}${after ? ' (after the cutscene: plays once gameplay starts)' : ''}`;
     m.setAttribute('aria-label', m.dataset.label);
 
     // First row whose last marker is far enough to the left, else a new row.
@@ -3838,7 +4015,8 @@ function syncCutEditUi()
 
   if (!cutEditing) {
     $('cutEvPanel').hidden = true;
-    hoverBox.visible = selBox.visible = false;
+    boxAround(hoverBox, null);
+    boxAround(selBox, null);
     setCutTrack(null);
   }
 }
@@ -5683,7 +5861,7 @@ $('cutPlay').onclick = async () => {
     cut.t = 0;
 
   if (cut.playing)
-    startCutAudio(cut.t * cut.data.length);
+    startCutAudio(cut.data.realAt(cut.t * cut.data.frames));
 
   if (!audioCtx)
     return;
@@ -5701,7 +5879,7 @@ $('cutTime').oninput = () => {
   cut.t = +$('cutTime').value;
 
   if (cut.playing)
-    startCutAudio(cut.t * cut.data.length);
+    startCutAudio(cut.data.realAt(cut.t * cut.data.frames));
   else
     stopCutAudio();
 };
@@ -5783,7 +5961,18 @@ async function deleteItem(item)
 
   const dv = await rom.read(dir + '/dat');
   const bytes = u8(dv);
-  const refs = it.name ? nameUses(bytes, it.name, it.offset, it.offset + dv.getUint32(it.offset + 8)) : 0;
+
+  // A unit's own path (no other unit flies it, and the mission's script doesn't name it) can go with it.
+  const all = parseDAT(dv).items;
+  const pathName = it.type === 0 ? npcPathGet(dv, it) : '';
+  const spline = pathName && all.find((x) => x.type === 3 && x.name === pathName);
+  const shared = spline && all.some((x) => x.type === 0 && x.offset !== it.offset && npcPathGet(dv, x) === pathName);
+  const ownPath = spline && !shared && !nameUses(romBytes.subarray(0, BLOB_START), pathName, 0, 0);
+  const dropPath = ownPath && confirm(`Also delete its path "${pathName}"? No other unit flies it.`);
+
+  // A path going with it doesn't count as something that mentions it.
+  const inPath = dropPath && it.name ? nameUses(bytes.subarray(spline.offset, spline.offset + dv.getUint32(spline.offset + 8)), it.name, 0, 0) : 0;
+  const refs = it.name ? nameUses(bytes, it.name, it.offset, it.offset + dv.getUint32(it.offset + 8)) - inPath : 0;
 
   if (refs && !confirm(`Other items in this level mention "${it.name}" (${refs}x: triggers, paths or areas). Delete it anyway?`))
     return;
@@ -5806,6 +5995,13 @@ async function deleteItem(item)
 
       // Zones and triggers are referred to by index: the rest are renumbered.
       await editAsset(dir + '/dat', (b) => (it.type === 0 ? datRemoveUnit(b, it.index) : datRemoveIndexed(b, it.type, it.index)));
+
+      if (dropPath)
+        await editAsset(dir + '/dat', (b) => {
+          const s = parseDAT(dvOf(b)).items.find((x) => x.type === 3 && x.name === pathName);
+
+          return s ? datRemoveIndexed(b, 3, s.index) : b;
+        });
 
       if (it.type === 0)
         await syncPackages(dir);

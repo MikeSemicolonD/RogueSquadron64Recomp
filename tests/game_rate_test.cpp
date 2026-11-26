@@ -83,6 +83,13 @@ int main() {
     update(t, k60, true);
     CHECK(!t.tick);
 
+    // keeps_up
+    CHECK(keeps_up(k60, 60));
+    CHECK(keeps_up(1.0f / 45.0f, 60));
+    CHECK(!keeps_up(k30, 60));
+    CHECK(!keeps_up(0.05f, 60));
+    CHECK(keeps_up(k30, 30));
+
     // drag_half_step
     CHECK(std::fabs(drag(0.9f, 0.5f) * drag(0.9f, 0.5f) - 0.9f) < 1e-6f);
     CHECK(drag(0.9f, 1.0f) == 0.9f);

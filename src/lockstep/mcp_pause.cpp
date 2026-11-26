@@ -6,9 +6,14 @@
 #include "host_api/host_api.h"
 #include "input/touch_menu.h"
 #include "main/mcp_bridge.h"
+#include "main/ui_panels.h"
 #include "hle/rt64_rs64_mcp.h"
 #include "util/debug_logs.h"
+#include "ultramodern/ultramodern.hpp"
+#include "input/input_host.h"
+
 #include <algorithm>
+#include <atomic>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -37,6 +42,7 @@ static std::map<std::string, uint32_t> s_mcp_dl_clocks;
 static std::optional<PauseTarget> s_mcp_target;
 static bool s_mcp_held = false;
 static bool s_mcp_release = false;
+static bool s_key_hold = false;
 static uint64_t s_mcp_hold_gen = 0;
 // Bumped when the MCP client disconnects, so a request left waiting by that client can't pause RT64 afterwards.
 static uint64_t s_mcp_epoch = 0;
@@ -254,12 +260,13 @@ void mcp_pause_point(const std::string& clock)
     hold_until([]() {
         std::lock_guard<std::mutex> lk(s_mcp_lock);
 
-        return s_mcp_release || !rs64_mcp_connected();
+        return s_mcp_release || (!rs64_mcp_connected() && !s_key_hold);
     }, std::chrono::steady_clock::time_point::max());
 
-    const bool dropped = !rs64_mcp_connected();
-
     g.lock();
+
+    const bool dropped = !rs64_mcp_connected() && !s_key_hold;
+
     s_mcp_held = false;
     g.unlock();
 
@@ -292,8 +299,15 @@ static nlohmann::json mcp_frame_info()
     clocks["dl"] = s_mcp_dl_seq;
 
     const nlohmann::json input = mcp_input_live() ? nlohmann::json{ { "buttons", s_mcp_input->names }, { "stick", { s_mcp_input->x, s_mcp_input->y } }, { "until_dl", s_mcp_input->until_dl } } : nlohmann::json();
+    const std::string state = rs64_state_current_id();
+    const RsMenuView view = rs64_nav_menu_view();
 
-    return { { "state", rs64_state_current_id() }, { "clocks", clocks }, { "restarts", s_mcp_restarts }, { "held", s_mcp_held }, { "rt64_paused", RT64::rs64mcp::paused() }, { "picture", s_mcp_held ? s_mcp_picture : nlohmann::json() }, { "input", input }, { "nav", rs64_nav_active() } };
+    // A front-end page: its title, entries, cursor row and the pages that led to it (depth = path length).
+    const nlohmann::json menu = (state.rfind("menu", 0) == 0 && !view.title.empty())
+        ? nlohmann::json{ { "title", view.title }, { "entries", view.entries }, { "cursor", view.cursor }, { "path", view.path }, { "depth", view.path.size() } }
+        : nlohmann::json();
+
+    return { { "state", state }, { "clocks", clocks }, { "restarts", s_mcp_restarts }, { "held", s_mcp_held }, { "rt64_paused", RT64::rs64mcp::paused() }, { "picture", s_mcp_held ? s_mcp_picture : nlohmann::json() }, { "input", input }, { "nav", rs64_nav_active() }, { "menu", menu } };
 }
 
 struct McpWait { uint64_t gen; uint64_t epoch; };
@@ -311,7 +325,10 @@ static McpWait mcp_set_target(std::optional<PauseTarget> target, bool release = 
 
     s_mcp_target_after = after;
 
-    if (target && after_restart && !after) {
+    // A run that started before the request but is still short of the frame counts: the caller is often slower than the restart.
+    const auto now = target ? s_mcp_clocks.find(target->clock) : s_mcp_clocks.end();
+
+    if (target && after_restart && !after && now != s_mcp_clocks.end() && now->second >= target->frame) {
         s_mcp_target_after = s_mcp_restarts[target->clock];
     }
 
@@ -430,7 +447,41 @@ static nlohmann::json mcp_pause_at(const nlohmann::json& p)
 
     const McpWait w = mcp_set_target(PauseTarget{ p["clock"].get<std::string>(), p["frame"].get<uint32_t>() }, false, p.value("next", false), after);
 
-    return mcp_wait_frozen(w, p.value("timeout_s", 120.0));
+    // speed: run the game clock that fast while waiting, back to the old speed once held (or on failure).
+    if (!p.contains("speed"))
+    {
+        return mcp_wait_frozen(w, p.value("timeout_s", 120.0));
+    }
+
+    const double was = ultramodern::get_speed();
+
+    ultramodern::set_speed(p["speed"].get<double>());
+
+    try {
+        nlohmann::json out = mcp_wait_frozen(w, p.value("timeout_s", 120.0));
+
+        ultramodern::set_speed(was);
+
+        return out;
+    }
+    catch (...) {
+        ultramodern::set_speed(was);
+        throw;
+    }
+}
+
+// {x}: set the game clock speed (1/16..16, 1 = real time); {} reports it.
+static nlohmann::json mcp_speed(const nlohmann::json& p)
+{
+
+    if (p.contains("x"))
+    {
+        if (!p["x"].is_number()) throw std::runtime_error("x must be a number (1/16..16)");
+
+        ultramodern::set_speed(p["x"].get<double>());
+    }
+
+    return { { "speed", ultramodern::get_speed() } };
 }
 
 // Pause once an RDRAM value meets a condition, checked every frame (a game state change is pause_at with the state's clock at frame 0).
@@ -608,7 +659,7 @@ static nlohmann::json mcp_nav(const nlohmann::json& p)
 {
 
     if (p.contains("next_level")) {
-        rs64_nav_chain_next(p["next_level"].get<int>());
+        rs64_nav_chain_next(p["next_level"].get<int>(), p.value("craft", -1), false);
 
         return { { "next_level", p["next_level"] } };
     }
@@ -666,8 +717,71 @@ static nlohmann::json mcp_pause_menu(const nlohmann::json& p)
     return { { "page", open }, { "entry", rs64::touch::pause_entry(rdram) }, { "rows", rows } };
 }
 
+// The pause hotkey (F10) pauses on the next frame or resumes, the step hotkey (F11) steps one frame while paused; both work with or without an MCP client.
+static std::atomic<bool> s_key_busy{false};
+
+static void mcp_key_run(bool step)
+{
+
+    if (s_key_busy.exchange(true))
+    {
+        return;
+    }
+
+    std::thread([step] {
+
+        using rs64::input::Hotkey;
+
+        const bool held = mcp_frame_info()["held"].get<bool>();
+        const std::string keys = " (" + rs64::app::hotkey_key(Hotkey::Step) + " step, " + rs64::app::hotkey_key(Hotkey::Pause) + " resume)";
+        const auto set_key_hold = [](bool on) {
+
+            std::lock_guard<std::mutex> g(s_mcp_lock);
+
+            s_key_hold = on;
+        };
+
+        try {
+            if (step && held) {
+                mcp_step({ { "frames", 1u } });
+                rs64::app::notify("keypause", "Paused at display list " + std::to_string(mcp_frame_info()["clocks"]["dl"].get<uint64_t>()) + keys, 3600.0f);
+            }
+            else if (!step && held) {
+                set_key_hold(false);
+                mcp_resume({});
+                rs64::app::notify("keypause", "Resumed (" + rs64::app::hotkey_key(Hotkey::Pause) + " pause)", 2.0f);
+            }
+            else if (!step) {
+                set_key_hold(true);
+
+                const McpWait w = mcp_set_target(PauseTarget{ "dl", (uint32_t)mcp_frame_info()["clocks"]["dl"].get<uint64_t>() + 1 });
+
+                mcp_wait_frozen(w, 5.0);
+                rs64::app::notify("keypause", "Paused" + keys, 3600.0f);
+            }
+        }
+        catch (const std::exception& e) {
+            fprintf(stderr, "[keypause] %s\n", e.what());
+        }
+
+        s_key_busy.store(false);
+    }).detach();
+}
+
 extern "C" void rs64_mcp_register_pause_methods()
 {
+
+    // An event watch, not poll_input: poll_input runs on the game thread, which a pause holds.
+    SDL_AddEventWatch([](void*, SDL_Event* ev) -> int {
+
+        const rs64::input::Hotkey h = (ev->type == SDL_KEYDOWN && ev->key.repeat == 0) ? rs64::app::hotkey_at(ev->key.keysym.scancode) : rs64::input::Hotkey::Count;
+
+        if (h == rs64::input::Hotkey::Pause || h == rs64::input::Hotkey::Step) {
+            mcp_key_run(h == rs64::input::Hotkey::Step);
+        }
+
+        return 0;
+    }, nullptr);
 
     rs64_mcp_register("pause_when", mcp_pause_when);
     rs64_mcp_register("pause_when_drawn", mcp_pause_when_drawn);
@@ -677,6 +791,7 @@ extern "C" void rs64_mcp_register_pause_methods()
     rs64_mcp_register("pause_at", mcp_pause_at);
     rs64_mcp_register("step", mcp_step);
     rs64_mcp_register("resume", mcp_resume);
+    rs64_mcp_register("speed", mcp_speed);
     rs64_mcp_register("frame_info", [](const nlohmann::json&) { return mcp_frame_info(); });
     rs64_mcp_register("setting", rs64::menucfg::setting_rpc);
     rs64_mcp_register("nav", mcp_nav);

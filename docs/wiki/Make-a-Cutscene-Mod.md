@@ -86,5 +86,4 @@ A stock chapter's crawl is replaced by yours.
 
 ## Not yet possible
 
-- The crawl preview's fly-by ships don't change with the planet.
-- A full intro built from blank is untested.
+- The crawl preview doesn't show the player's own craft, which takes one fly-by ship's place in the game.

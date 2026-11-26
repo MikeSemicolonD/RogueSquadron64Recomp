@@ -13,6 +13,20 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 >
 > Most of the debugging, architectural decisions, and code here were produced with Claude.
 
+<div hidden align="center">
+
+---
+  
+[<picture title="Recomp. Launcher">
+    <source
+      srcset="./docs/recomp-launcher/badge-dark.svg"
+      media="(prefers-color-scheme: dark)"
+    />
+    <img align="top" src="./docs/recomp-launcher/badge-light.svg" alt="Recomp. Launcher" />
+</picture>](https://mikesemicolond.github.io/RogueSquadron64Recomp/)
+
+</div>
+
 ---
 
 <div align="center">
@@ -43,12 +57,15 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 | **[Android 9+ arm64](#android)** | Vulkan 1.1 |
 | **[macOS 11+ arm64 (Apple Silicon)](#macos)*** | Metal |
 | **[macOS 11+ x86_64 (Intel)](#macos)*** | Metal |
+| **[Web browser](https://github.com/n64hub/RogueSquadron64Recomp-web)**† | WebGPU |
 
 </div>
 
 *macOS builds but hasn't been run on a Mac yet (see [macOS](#macos))
 
 **The 32-bit x86 Linux build has only been tested on a 64-bit PC with software Vulkan.
+
+†A separate [fork](https://github.com/n64hub/RogueSquadron64Recomp-web) by [n64hub](https://github.com/n64hub/)/[amazingalek](https://github.com/amazingalek)
 
 [Per-platform minimum requirements](docs/guides/building-all-platforms.md#what-players-need).
 
@@ -85,9 +102,9 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 - **Online two-player co-op:** host or join from a **MULTIPLAYER** page on the main menu. Your partner flies alongside you as a wingman, shares objectives, lives, and the mission result.
   - Multiplayer is shipped as a `multiplayer-native` mod. Uses [miniupnp](https://github.com/miniupnp/miniupnp) and a fork of [ENet](https://github.com/lsalzman/enet) called [ENet6](https://github.com/SirLynix/enet6).
   - See [docs/guides/multiplayer.md](docs/guides/multiplayer.md) for more details.
-- **Ways to connect:**
+- **Ways to connect:** there is no official server. See [docs/guides/co-op-setup.md](docs/guides/co-op-setup.md) for more details.
   - **Direct:** works over LAN (with automatic discovery) and over the internet (with UPnP port forwarding).
-  - **Wi-Fi Direct (Windows 10+, Linux, Android 10+):** play with no router. When there's no shared network, a nearby player who picks JOIN GAME joins the host's own Wi-Fi network automatically. (Android will ask to allow it) Linux needs NetworkManager and only hosts when it isn't already on a Wi-Fi network. Hosting on Linux or Android is untested. macOS doesn't support Wi-Fi direct (macOS uses 'Network Sharing').
+  - **Wi-Fi Direct (Windows 10+, Linux, Android 10+):** play with no router. When there's no shared network, a nearby player who picks JOIN GAME joins the host's own Wi-Fi network automatically. (Android will ask to allow it) Linux needs NetworkManager and only hosts when it isn't already on a Wi-Fi network. Hosting on Linux or Android is untested. macOS doesn't support Wi-Fi Direct (macOS uses 'Network Sharing').
   - **Steam, using the `steam-relay` mod (Desktop ONLY):** with Steam running, HOST GAME lists your game on Steam, and JOIN GAME shows the open games to pick from (locked ones ask for their password). Steam sees the game as Spacewar (app id 480).
   - **Self-hosted relay server:** anyone can run `rs64_relay`, a small console server for Windows and Linux, and players type its address into the MULTIPLAYER address box, just like a friend's IP. The game remembers the server, HOST GAME lists games there and JOIN GAME shows them. Setup is in [docs/guides/relay-server.md](docs/guides/relay-server.md).
 - **Setup notes:**
@@ -101,7 +118,7 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 
 #### Mods
 
-- **Mod support:** turn mods on and off in the **Mods** panel of the **F6** window. (some might require resetting the game)
+- **Mod support:** turn mods on and off in the **Mods** panel of the **F6** window OR the game's built-in Mod menu. (some might require resetting the game)
   - Developers can use [mods/platforms.json](mods/platforms.json) to automatically include mods in builds based on platform.
   - See [docs/guides/modding.md for modding info](docs/guides/modding.md).
 - **Included mods:**
@@ -111,8 +128,8 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
   - **Larger Object Pool:** doubles the number of ships, lasers, and explosions the game can track at once, so busy missions stop resetting pooled objects.
   - **Long Tow Cable:** the snowspeeder's tow cable is long enough to wrap an AT-AT several times.
   - **Quit Prompt:** a prompt in the main menu asking if you want to quit.
-  - **Invincibility:** your craft takes no damage.
-  - **Any Craft, Any Mission:** fly any ship on any level.
+  - **Invincibility:** your craft takes no damage. (Off by default)
+  - **Any Craft, Any Mission:** fly any ship on any level. (Off by default)
 
 ## Running
 
@@ -126,7 +143,7 @@ Actions are for the game's default **Luke** controller setting. The other contro
 
 <div align="center">
 
-| Action | Keyboard | Mouse | N64 | Gamepad | Joystick / H.O.T.A.S. | Quest HMD (VR) |
+| Action | Keyboard | Mouse | N64 | Gamepad | Joystick / H.O.T.A.S. | VR Controller |
 | --- | --- | --- | --- | --- | --- | --- |
 | Steer | <kbd>↑</kbd>,<kbd>↓</kbd>,<kbd>←</kbd>,<kbd>→</kbd> (<kbd>A</kbd>/<kbd>D</kbd> turns) | Mouse X/Y | Analog stick | Left stick | Stick X/Y | LS |
 | Fire blasters | <kbd>Space</kbd> | <kbd>LMB</kbd> | B | A (South) | Button 1 (trigger) | A |
@@ -135,7 +152,7 @@ Actions are for the game's default **Luke** controller setting. The other contro
 | Thrust | <kbd>W</kbd> | — | A | Right trigger | Button 3 | R2 |
 | Brake | <kbd>S</kbd> | — | Z | Left trigger | Button 4 | L2 |
 | Speed (positional) | — | — | — | — | Throttle lever | — |
-| Roll | <kbd>E</kbd> | — | R | Right shoulder | Button 7 + twist joystick | Both grips |
+| Roll | <kbd>E</kbd> | — | R | Right shoulder | Button 7 + twist joystick | — |
 | Special | <kbd>F</kbd> | — | C-Right | X (West) | Button 5 | X |
 | Cockpit | <kbd>C</kbd> | — | D-Pad Up | D-Pad Up | — | — |
 | Standard | <kbd>V</kbd> | — | D-Pad Down | D-Pad Down | — | — |
@@ -163,8 +180,10 @@ Actions are for the game's default **Luke** controller setting. The other contro
   - The throttle sets your speed by position: *full back* is the craft's slowest, *full forward* is fastest, and *middle* is normal speed.
   - Other axes can be bound from the Controls window (**F6**)
   
-- **Lightbar support via DualShock 4 & DualSense:** lightbar color will change depending on the state of the game.
+- **DualShock 4 & DualSense Lightbar Support:** lightbar color will change depending on the state of the game.
   - Colors configurable from the `lightbar` section in `roguesq_input.json`
+
+- **DualSense Adaptive Trigger Support:** Ship speed affects the resistance of the Thrust & Brake triggers. Brake trigger becomes *resistive* if the speed is beyond cruising speed. Thrust trigger becomes *resistive* if at cruise speed or less.
 
 > [!TIP]
 > When binding the throttle, move the lever to the opposite position, click **Rebind** on 'Throttle', then push/pull it forward/back.
@@ -186,9 +205,12 @@ Actions are for the game's default **Luke** controller setting. The other contro
 | <kbd>F7</kbd> | FPS counter | All |
 | <kbd>F8</kbd> | VR camera controls via Numpad + Mouse | All (with VR Mode ON) |
 | <kbd>F9</kbd> / <kbd>Shift</kbd>+<kbd>F9</kbd> | Step forward / back through the ray tracing debug views | All |
+| <kbd>F10</kbd> | Pause / resume the game on an exact frame | Debug |
+| <kbd>F11</kbd> | Step one frame while paused | Debug |
 | <kbd>F12</kbd> | Write a crash dump to `dumps/crash-dumps/` (Windows only) | All |
 | <kbd>Print Screen</kbd> | RenderDoc frame capture (set `ROGUESQ_RENDERDOC=<path to renderdoc.dll>`, Windows only) | All |
 
+- Change these keys, or turn them all off, under `hotkeys` in `roguesq_input.json` ([details](docs/guides/building-all-platforms.md)), or turn them off for one run with `--no-hotkeys`.
 - The current ray tracing debug view is named in a notice at the bottom right.
 - Set `ROGUESQ_FULL_DUMP=1` for a full-memory crash dump.
 - With RenderDoc loaded, **F12** also takes a capture alongside the crash dump. Launching from RenderDoc works too, without `ROGUESQ_RENDERDOC`.
@@ -223,7 +245,38 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 >
 > All issues should be reported/tracked via the [issue tracker](https://github.com/MikeSemicolonD/RogueSquadron64Recomp/issues?q=is%3Aissue+is%3Aopen+label%3A"Recomp.+Issue").
 
-- Shadows that are cast onto the new terrain renderer might not look 100% correct when compared with the look of the original's (Legacy) Terrain render. This is because of how shadow casting worked in the original along with how it did LOD. Terrain shadows are 'averaged' in the old one whereas the new one isn't, so shadows are cast more realistically.
+- Shadows that are cast onto the new terrain renderer might not look 100% correct when compared with the look of the original's (Legacy) Terrain renderer. This is because of how shadow casting worked in the original along with how it did LOD. Terrain shadows are 'averaged' in the old one whereas the new one isn't, so shadows are cast more realistically.
+
+#### Ray Tracing Caveats
+
+- With Ray Tracing on, the following levels get light-shaft haze because I genuinely think they visually work better with it:
+  - Search for the Nonnah
+  - Imperial Construction Yard
+  - Escape from Fest
+  - Battle above Taloraan
+
+- Stray/odd shadows in places mostly due to terrain or its edge geometry
+
+- Shadows popping in and out because of geometry being culled when outside the camera's frustum. (Culling viewports have been increased/offset to alleviate this.)
+
+- Reflections might not look completely accurate because of the nature of Screen Space Reflections
+  - Battle for Calamari's intro cutscene doesn't reflect the explosion even though it is physically correct, since the explosion is near the camera's height and its mirror image falls below the screen. A potential solution would be an automated cubemap projection for each level done on the fly and have that be used as a fallback for when screen space reflections fall short.
+
+#### Draw distance Caveats
+
+- 'Search for the Nonnah' and 'Escape from Fest' keep their fog at a high draw distance. Every other level's fog moves out with the draw distance.
+  - 'Search for the Nonnah' is intended to have heavy fog since the player is meant to search the level for the objective.
+  - 'Escape from Fest' **needs it** because the AT-PTs for the mission spawn based on Player proximity.
+
+- Nearby hills can show a sharp outline against the fog wall.
+
+- Buildings, turrets and units the game hasn't woken yet show in their starting pose, frozen until you get within the game's own range (about `1.5x`).
+
+- There will be situations where Ties or Bombers appear to be stationary or might even move a little before being 'activated' once you get close enough to them. Since spawning of NPCs occurs based on player proximity, extending that distance could negatively affect gameplay so 'imposters'/'stand-ins' are used to display structures and NPCs at a distance in order to perserve gameplay.
+
+- With LEGACY TERRAIN on (Display Settings > ADVANCED), the draw distance is capped at `1.3x` for performance reasons.
+
+- Draw distance will change on the fly relative to the intro/outro cutscene being played. Fog works in the same way. This is to maintain the original look/vision for the cutscenes. Mid-game cutscenes however will use the user's set draw distance.
 
 ### Game specific Issues
 
@@ -234,7 +287,11 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 >
 > Game Issues should be fixed with Mods instead of fixing it through the recomp. which can affect all users who play expecting the base experience.
 
-- Some CPU performance hitching and slowdown (~20fps) in spots (although not as bad as the real N64 game). This is expected since the game is very CPU heavy with a lot of systems running off of counters based on a variable timestep. CPU heavy in the sense that the game has its own internal scheduler meaning the majority of the time it's actually waiting on a counter or something to 'finish'.
+- During cutscenes NPCs or ships might pop in and out or stop moving in general, which is very noticeable when in Widescreen since you can see beyond the game's original aspect ratio. This is normal cutscene behavior.
+
+- Turrets and structures aren't always uniformly connected to the ground, showing a gap between the structure and the ground.
+
+- Some CPU performance hitching and slowdown (~20fps) in spots (although not as bad as the real N64 game). This is expected since the game is very CPU heavy with a lot of systems running off of counters based on a variable timestep. *CPU heavy* in the sense that the game has its own internal scheduler meaning the majority of the time it's actually waiting on a counter or something to 'finish'. Raising the FPS limit and turning off frame interpolation alleviates this issue.
 
 - Frame rate seems to drop temporarily when the game initially loads into the Profile Select menu (menu transition animations look choppy for a few ms) due to glyphs, graphics and sounds loading in on the fly when menus load.
 
@@ -250,7 +307,7 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 - Button doesn't respond to input during the first few frames when it is highlighted.
 
-- The starfield in the background used during the credits sequence really **is** *that* blurry with visible artifacts everywhere.
+- The background images used during the credits sequence AND showroom menu really **is** *that* blurry with visible artifacts everywhere.
 
 - Lasers + missiles popping out of existence due to the number of them being generated at once. This is the game's normal pooled object behavior. There's a larger-object-pool mod that extends this limit.
 
@@ -258,32 +315,9 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 - Camera jitter after the player dies, spirals out and hits the ground while the camera is over a sharp incline.
 
-#### Ray Tracing Caveats
+- A craft's ground shadow can show as a thin dark line stretching down the screen, when part of the shadow picks up the wrong ground height (e.g. the Beggar's Canyon ending near the landing pad).
 
-- With Ray Tracing on, the following levels get light-shaft haze because I genuinely think they visually work better with it:
-  - Search for the Nonnah
-  - Imperial Construction Yard
-  - Escape from Fest
-  - Battle above Taloraan
-
-- Stray/odd shadows in places mostly due to terrain or its edge geometry
-
-- Shadows popping in and out because of geometry being culled when outside the camera's frustum. (Culling viewports have been increased/offset to alleviate this.)
-
-- Reflections might not look completely accurate because of the nature of Screen Space Reflections
-  - Battle for Calamari's intro cutscene doesn't reflect the explosion even though it is physically correct, since the explosion is near the camera's height and its mirror image falls below the screen.
-
-#### Draw distance Caveats
-
-- 'Search for the Nonnah' and 'Escape from Fest' keep their fog at a high draw distance. Every other level's fog moves out with the draw distance.
-  - 'Search for Nonnah' is intended to have heavy fog since the player is meant to search the level for the objective.
-  - 'Escape from Fest' **needs it** because the AT-PTs for the mission spawn based on Player proximity.
-
-- Buildings, turrets and units the game hasn't woken yet show in their starting pose, frozen until you get within the game's own range (about `1.5x`).
-
-- With LEGACY TERRAIN on (Display Settings > ADVANCED), the draw distance is capped at `1.3x` for performance reasons.
-
-- Draw distance will change on the fly relative to the cutscene being played. Fog works in the same way. This is to maintain the original look/vision for the cutscenes.
+- Objects (static blue units) on radar will pop in and out when out of view of the player.
 
 ### Roadmap
 
@@ -489,12 +523,11 @@ Without a Mac, the game cross-compiles from **WSL2 / Linux** with [osxcross](htt
 
 - **Build:** configure with `-DRS64_OPENXR=ON`. VR needs the Vulkan renderer.
 - **Start:** launch with `--preset vr` to use the [vr video preset](video-presets/vr/roguesq_video.json), which starts in the headset with settings that hold the headset's frame rate. Without a headset or runtime the game starts flat.
+- **Headsets:** choosing the OpenXR runtime, SteamVR and Vive setup, and the Index and Vive controller layouts are in [VR headsets](docs/guides/building-all-platforms.md#what-players-need).
 - **Your size:** push the right thumbstick up to grow or down to shrink until the cockpit feels right. Missions, the menus' 3D scenes (the hangar) and cutscenes each keep their own size, saved as `vrScale`, `vrScaleMenus` and `vrScaleCutscenes`.
 - Missions, cutscenes and SELECT LEVEL are in stereoscopic 3D while the menus and results screens show on a virtual screen in front of you.
 
-### Developing VR without a headset
-
-The [Meta VR CLI](https://github.com/meta-quest/agentic-tools) (`metavr`) was instrumental in fixing and debugging VR. Its `metavr xrsim` commands drive the **Meta XR Simulator**, a headset stand-in that runs the real OpenXR path on the desktop. An agent can start the simulator, pick a device and refresh rate, and launch the game against it, then capture frames and read logs without anyone wearing a headset.
+The [Meta VR CLI](https://github.com/meta-quest/agentic-tools) (`metavr`) is instrumental in fixing and debugging VR issues. Its `metavr xrsim` commands drive the **Meta XR Simulator**, a headset stand-in that runs the real OpenXR path on the desktop. An agent can start the simulator, pick a device and refresh rate, and launch the game against it, then capture frames and read logs without anyone wearing a headset.
 
 ```powershell
 metavr xrsim app ensure-running
@@ -504,10 +537,6 @@ $env:XR_RUNTIME_JSON = "$env:APPDATA\metavr\tools\xrsim\meta_openxr_simulator.js
 ```
 
 `ROGUESQ_LOG_VR=1` logs how each headset frame was filled every 2 seconds. Real-headset runs still matter: the simulator lacks some runtime extensions, and only a person in the headset can judge comfort and scale.
-
-## Architecture
-
-How the port is put together (recompiled code, the forked RT64 and N64ModernRuntime, frame pacing, audio and the override layer) is in [docs/reference/game-architecture.md](docs/reference/game-architecture.md). [docs/README.md](docs/README.md) indexes the rest of the engine docs, including debugging, native mods and co-op.
 
 ## Browser based tools
 
@@ -530,20 +559,27 @@ A save editor also exists in *`tools/web/save-editor`* as an HTML page, allowing
 
 ## 'Proper' AI Agent Usage
 
+> [!IMPORTANT]
+> **Please be involved in the loop when doing agentic coding.**
+>
+> An agent **does not know** what *looks* and what *feels* right for **any game**. When developing, verify bug fixes and play test to ensure consistency.
+>
+> If it can be helped, it'd be wise to create a 'unit test' to check the issue to ensure the bug remains fixed.
+
 Using an AI Agent properly comes down to handing it the *right set of tools*, *the right resources/knowledge to perform the work* and *instructions*. **AGENTS.md** provides the baseline instructions for your agent to make changes to this project. In addition to that, **skill** files *(just like AGENTS.md)* are used to provide instructions for things like tools, specific tasks and/or processes. **MCP** servers/tools can further augment existing applications by giving handles/methods for agents to *better* perform tasks.
 
 This repo already provides **AGENTS.md** and **skill** files. **MCP** servers are configured and set up by the user themselves and are something we can't force/mandate. Beyond MCP are things called **harnesses** which can be a tool to perform tasks or orchestrate agents to perform a set of tasks at once. This repo contains some harnesses in `tools` to perform tests, perform multiple runs to verify robustness or drive an agent to a particular menu to chase a bug.
 
-Once your agent is set up, tasks that would've taken weeks/months/years to do can be done in a single day/week. (This reason alone is why trillions are being spent in this sector)
+Once your agent is set up, tasks that would've taken weeks/months/years to do can be done in a single day/week.
 
 Here's a list of MCPs that could be useful for this project:
 
-- [rs64-mcp](docs/engine/rt64-mcp.md) (in this repo, `tools/debug/mcp/rs64_mcp.py`, set up in the local `.mcp.json`) lets an agent launch the game, pause on an exact frame, and inspect draws, textures, framebuffers, RDRAM and screenshots. The game side is built into Debug by default. For Release, configure with `-DRS64_MCP=ON` (or run the VS Code task "Build: RogueSquadron64Recomp (Release, MCP)")
-- [renderdoc](https://github.com/Linkingooo/renderdoc-mcp) (Requires [RenderDoc source code](https://github.com/baldurk/renderdoc) and [Python 3.11](https://www.python.org/downloads/) to compile the `renderdoc.pyd` that this MCP needs; the `.pyd` loads only in the Python version it was built with, so the MCP server must run on that same 3.11)
-- [windows-screenshot-mcp-server](https://github.com/MikeSemicolonD/windows-screenshot-mcp-server) (Requires [Go 1.25.2](https://go.dev/dl/))
+- [rs64-mcp](docs/engine/rt64-mcp.md): lets an agent launch the game, pause on an exact frame, and inspect draws, textures, framebuffers, RDRAM and take screenshots. Built into Debug by default. For Release, configure with `-DRS64_MCP=ON` or run the VS Code task "Build: RogueSquadron64Recomp (Release, MCP)"
+- [renderdoc](https://github.com/Linkingooo/renderdoc-mcp): Requires [RenderDoc source code](https://github.com/baldurk/renderdoc) and [Python 3.11](https://www.python.org/downloads/) to compile the `renderdoc.pyd` that this MCP needs; the `.pyd` loads only in the Python version it was built with, so the MCP server must run on that same 3.11
+- [windows-screenshot-mcp-server](https://github.com/MikeSemicolonD/windows-screenshot-mcp-server): Requires [Go 1.25.2](https://go.dev/dl/)
 
 > [!CAUTION]
-> `windows-screenshot-mcp-server` usage can be finicky.
+> Screenshot usage using `windows-screenshot-mcp-server` or `rs64-mcp` can be finicky.
 >
 > While Claude (*as of **September 2026***) can view pixels in the screenshots, it can miss things that are visually obvious to a human like visual glitches or rapidly flickering artifacts.
 >
@@ -557,19 +593,25 @@ Here's a list of MCPs that could be useful for this project:
 
 [pj64](https://www.pj64-emu.com/nightly-builds) to pull memory dumps for checks and comparisons. (Development builds are recommended since they provide more ways to debug/validate *even though it performs slower*)
 
-## Contributors
+## Contributors / Testers
 
 - **[terminalcommand](https://github.com/terminalcommand)**: Assisted in improving the Linux build process, fixed missing tool calls in the CMakeLists, fixed Wayland crashes on Linux and added borderless fullscreen argument.
 
-## Play Testers
-
 - **[gpeter12](https://github.com/gpeter12)**: Helped to test and verify that the recomp. works on Linux Mint 22.3 - Cinnamon 64-bit in addition to testing and verifying the 'setup.sh' to improve the build process for both developers & non-developers.
+
+- **[nandologia](https://github.com/nandologia)**: Tested and verified that the recomp works in Batocera.
 
 ## Acknowledgements
 
 - **[Dávid Pethes](https://github.com/dpethes/rerogue)**: the rerogue tools and the [satd.sk write-up](https://satd.sk/pages/rs/) documenting the PC build's HOB, HMT, HMP, and MORT formats, which the N64 build shares.
 - **[jrra](https://github.com/jrra/rerogue)**: a community fork of rerogue.
 - **[Tmcg2](https://github.com/Tmcg2/rogue_squadron64)**: started the companion decomp project.
+
+## Notable Forks
+
+- **[amazingalek](https://github.com/amazingalek)**'s [Web implementation](https://github.com/n64hub/RogueSquadron64Recomp-web) playable right -> **[HERE](https://n64hub.com/star-wars-rogue-squadron/)**
+- **[bkacjios](https://github.com/bkacjios)**'s [port for the PocketGo S30](https://github.com/bkacjios/rs64recomp-s30)
+- **[fyreatwill](https://github.com/fyreatwill/RogueSquadron64Recomp)**'s [macOS Port working off of my first attempt (LLE) branch](https://github.com/fyreatwill/RogueSquadron64Recomp) created through an autonomous loop
 
 ## License
 

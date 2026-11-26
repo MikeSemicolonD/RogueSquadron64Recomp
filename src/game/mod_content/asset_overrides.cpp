@@ -32,6 +32,7 @@
 #include "ultramodern/error_handling.hpp"
 #include "game/mod_content/mod_levels.h"
 #include "game/mod_content/terrain_paint.h"
+#include "game/mod_content/level_environment.h"
 #include "game/lang/lang.h"
 #include "game/mod_content/level_rules.h"
 #include "host_api/host_api.h"
@@ -40,6 +41,7 @@
 #include "util/host_ram_map.h"
 #include "rs64_mod_image_HOB_bps.h"
 #include "rs64_mod_image_HMT.h"
+#include "hle/rt64_rs64_host.h"
 
 using recomp::dbg::env_str;
 using recomp::dbg::env_on;
@@ -335,6 +337,27 @@ std::vector<std::pair<std::string, std::string>> rs64::assets::read_from_map(con
     return out;
 }
 
+// The Naboo Starfighter's textures are stored encrypted (decrypt_ns_hmt; key = CRC32 of "!YNGWIE!"), and an edit changes every
+// cipher byte after it, so a patch applies to the decrypted file and the result is encrypted again.
+constexpr const char* kNabooHmt = "pl_crafts/koelsch_HMT";
+
+static std::vector<uint8_t> naboo_cipher(const std::vector<uint8_t>& in, bool encrypt)
+{
+
+    std::vector<uint8_t> out(in.size());
+    uint32_t key = 0x050FE09Cu;
+
+    for (size_t i = 0; i < in.size(); i++)
+    {
+        const uint8_t c = encrypt ? (uint8_t)(in[i] ^ key) : in[i];
+
+        out[i] = encrypt ? c : (uint8_t)(c ^ key);
+        key = ((key >> 8) | (key << 24)) + c;
+    }
+
+    return out;
+}
+
 // A file named <path>.bps is a BPS patch applied to the player's own copy of <path>, so mods built from game assets ship no game data.
 extern "C" void rs64_asset_overrides_init()
 {
@@ -479,14 +502,17 @@ extern "C" void rs64_asset_overrides_init()
         for (const auto& [path, src] : rom_assets(recomp::get_rom(), [&](const std::string& p) { return patches.count(p) != 0; }))
         {
             const auto& [mod_id, bps] = patches[path];
+            const bool naboo = path == kNabooHmt;
             std::vector<uint8_t> out;
-            const auto res = recomp::patcher::patch_rom(src, bps, out);
+            const auto res = recomp::patcher::patch_rom(naboo ? naboo_cipher(src, false) : src, bps, out);
 
             if (res != recomp::patcher::PatcherResult::Success || out.empty())
             {
                 fprintf(stderr, "[assets] %s: patch for %s does not apply (%s)\n", mod_id.c_str(), path.c_str(), res == recomp::patcher::PatcherResult::WrongRom ? "made from a different asset" : "invalid patch");
                 continue;
             }
+
+            if (naboo) out = naboo_cipher(out, true);
 
             check_dat(mod_id, path, out);
             s_asset_overrides[path] = append(out);
@@ -570,6 +596,9 @@ extern "C" void rs64_asset_overrides_init()
 
     // Silent voice streams of 1-10 s for level-rule messages (a subtitle stays up while its line plays).
     for (int s = 1; s <= 10; s++) s_silence_rom[s - 1] = append(rs64rules::silentMort(s)).rom_off;
+
+    // A voice stream is read in whole chunks, so the last appended one would read past the end of the cart: pad it.
+    append(std::vector<uint8_t>(0x10000, 0));
 
     if (!rom.empty()) {
         rom.shrink_to_fit();
@@ -668,20 +697,13 @@ extern "C" uint32_t rs64_asset_manifest_to_free(uint32_t ptr) {
     return ptr;
 }
 
-// Terrain textures for RT64's whole-map pass, built once per level: level/tex and lv_<level, base 36>_TEX (a mod's copy when it replaces one) with the level's Soft paint textures (lv_<level>_PAINT) merged in as extra bank entries.
+// Terrain textures for RT64's whole-map pass: level/tex and lv_<level, base 36>_TEX (or a mod's copy) with the level's Soft paint (lv_<level>_PAINT) merged in; only the current level's bank is kept.
 // shortcut: mod-level aliases are not followed (Soft paint is stock levels only); follow them if mod levels get painted terrain.
 extern "C" int rs64_terrain_textures(uint32_t level, const uint8_t** bank, uint32_t* bank_size, const uint8_t** ids, uint32_t* ids_size)
 {
 
-    static std::once_flag s_once;
-    static std::unordered_map<std::string, std::vector<uint8_t>> s_files;
     static std::unordered_map<uint32_t, std::pair<std::vector<uint8_t>, std::vector<uint8_t>>> s_levels;
     static std::mutex s_mutex;
-
-    std::call_once(s_once, [] {
-        s_files = rom_assets(recomp::get_rom(), [](const std::string& p) { return p == "level/tex" || (p.rfind("level/lv_", 0) == 0 && p.size() > 4 && p.compare(p.size() - 4, 4, "_TEX") == 0); });
-    });
-
     static constexpr char kDigits[] = "0123456789abcdefghijklmnopqrstuvwxyz";
 
     if (level >= 36)
@@ -695,8 +717,11 @@ extern "C" int rs64_terrain_textures(uint32_t level, const uint8_t** bank, uint3
     if (it == s_levels.end())
     {
         const std::string lv = std::string("level/lv_") + kDigits[level];
+        const auto rom_files = rom_assets(recomp::get_rom(), [&lv](const std::string& p) { return p == "level/tex" || p == lv + "_TEX"; });
 
-        const auto file = [](const std::string& path) {
+        s_levels.clear();
+
+        const auto file = [&rom_files](const std::string& path) {
 
             std::vector<uint8_t> out;
 
@@ -705,7 +730,7 @@ extern "C" int rs64_terrain_textures(uint32_t level, const uint8_t** bank, uint3
                 const auto& rom = recomp::get_rom();
 
                 if ((size_t)o->rom_off + o->size <= rom.size()) out.assign(rom.begin() + o->rom_off, rom.begin() + o->rom_off + o->size);
-            } else if (const auto s = s_files.find(path); s != s_files.end())
+            } else if (const auto s = rom_files.find(path); s != rom_files.end())
             {
                 out = s->second;
             }
@@ -735,6 +760,60 @@ extern "C" int rs64_terrain_textures(uint32_t level, const uint8_t** bank, uint3
     *bank_size = (uint32_t)it->second.first.size();
     *ids = it->second.second.data();
     *ids_size = (uint32_t)it->second.second.size();
+
+    return 1;
+}
+
+// The mission sun's colour for a level (its lv_<level, base 36>/hmp, a mod's copy when it replaces one), known before the level loads: its intro cutscene lights with its own hmp.
+extern "C" int rs64_level_sun_color(uint32_t level, float* rgb)
+{
+
+    static std::mutex s_mutex;
+    static std::unordered_map<uint32_t, std::array<float, 4>> s_suns;
+    static constexpr char kDigits[] = "0123456789abcdefghijklmnopqrstuvwxyz";
+
+    if (level >= 36)
+    {
+        return 0;
+    }
+
+    std::lock_guard<std::mutex> lock(s_mutex);
+    auto it = s_suns.find(level);
+
+    if (it == s_suns.end())
+    {
+        const std::string path = std::string("level/lv_") + kDigits[level] + "/hmp";
+        const auto& rom = recomp::get_rom();
+        std::vector<uint8_t> hmp;
+
+        if (const AssetOverride* o = rs64::assets::find(path))
+        {
+            if ((size_t)o->rom_off + o->size <= rom.size()) hmp.assign(rom.begin() + o->rom_off, rom.begin() + o->rom_off + o->size);
+        }
+        else
+        {
+            auto files = rom_assets(rom, [&path](const std::string& p) { return p == path; });
+
+            if (!files.empty()) hmp = std::move(files.begin()->second);
+        }
+
+        std::array<float, 4> sun = { 0.0f, 0.0f, 0.0f, 0.0f };
+
+        sun[3] = rs64env::hmpSunColor(hmp.data(), hmp.size(), sun.data()) ? 1.0f : 0.0f;
+
+        fprintf(stderr, "[assets] %s sun colour (%.3f, %.3f, %.3f)%s\n", path.c_str(), sun[0], sun[1], sun[2], sun[3] > 0.0f ? "" : " not found");
+
+        it = s_suns.emplace(level, sun).first;
+    }
+
+    if (it->second[3] <= 0.0f)
+    {
+        return 0;
+    }
+
+    rgb[0] = it->second[0];
+    rgb[1] = it->second[1];
+    rgb[2] = it->second[2];
 
     return 1;
 }

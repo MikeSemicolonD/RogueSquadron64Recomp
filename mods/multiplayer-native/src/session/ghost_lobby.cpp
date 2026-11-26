@@ -1377,6 +1377,7 @@ extern "C" void rs64_lobby_mission_select_init(uint8_t* rdram, recomp_context* c
 
         // A new round: the client's craft comes with its next READY.
         s.remote_craft = -1;
+        s.remote_ship.clear();
 
         if (test_unlock > (long)(uint32_t)ctx->r6) {
             ctx->r6 = (gpr)test_unlock;
@@ -1550,6 +1551,7 @@ extern "C" void rs64_lobby_mission_select_tick(uint8_t* rdram, recomp_context* c
 // initMission right after choosePlayerCraftAssets (0x800FA5BC, still the load phase): the other player's craft as the puppet. Its wingman mesh is loaded the way the level's
 // wingman loader does it (isHobObjectLoaded 0x80056DA4; else sprintf "pl_crafts/%s" @0x8003BB5C, load_hmt_and_hob 0x8005645C(path, 0, 1, 0), loadCraftShadowTextures 0x8006B710).
 static int s_puppet_model = -1;
+static std::string s_puppet_ship;
 
 // Loads the model name from path (the asset name; pl_crafts/<name> when path is null) unless the level has it. False: already loaded, or no room for the strings.
 static bool load_model(uint8_t* rdram, recomp_context* ctx, const char* name, const char* path)
@@ -1629,6 +1631,41 @@ extern "C" void rs64_ghost_craft_assets(uint8_t* rdram, recomp_context* ctx)
     }
 
     s_puppet_model = m;
+    s_puppet_ship.clear();
+
+    // Their new hangar ship, when a mod here installs it too; else the puppet is its craft's wingman.
+    if (!s.remote_ship.empty() && rs64_ghost_ships() && rs64_ghost_ships()->has(s.remote_ship.c_str()))
+    {
+        const std::string path = "pl_crafts/" + s.remote_ship;
+
+        load_model(rdram, ctx, s.remote_ship.c_str(), path.c_str());
+        s_puppet_ship = s.remote_ship;
+
+        fprintf(stderr, "[coop] loaded %s for the other player's ship\n", path.c_str());
+    }
+}
+
+// The other player's ship id the puppet draws, "" for its wingman model.
+extern "C" const char* rs64_ghost_puppet_ship(void) {
+    return s_puppet_ship.c_str();
+}
+
+// The base's ships service (include/rs64/ships.h), null on an older host.
+extern "C" const rs64_ships* rs64_ghost_ships(void)
+{
+
+    static const auto* svc = (const rs64_ships*)rs64::mp::service(RS64_SHIPS_SERVICE);
+
+    return svc;
+}
+
+// The ships service when it has the special position and puppet posing (version 3), else null.
+extern "C" const rs64_ships* rs64_ghost_ships_v3(void)
+{
+
+    const rs64_ships* svc = rs64_ghost_ships();
+
+    return svc && svc->version >= 3 && svc->size >= sizeof(rs64_ships) ? svc : nullptr;
 }
 
 // The puppet's wingman model for this mission (-1: use the level's).
@@ -1710,13 +1747,17 @@ extern "C" void rs64_lobby_craft_select_tick(uint8_t* rdram, recomp_context* ctx
         ww(rdram, 0x800CD714u, 0);
     }
 
-    // updateHangarBayScene takes A/Start only with the bay at rest (0x800CD6CC) and the craft's bit in the allowed mask 0x800CD6D8 (bay table 0x800CC40C [0x800CD6E8]); a denied press passes through to its deny sound.
-    const bool pickable = rb(rdram, 0x800CD6CCu) == 0 && ((rw(rdram, 0x800CD6D8u) >> (rb(rdram, 0x800CC40Cu + rb(rdram, 0x800CD6E8u)) & 31u)) & 1u) != 0;
+    // updateHangarBayScene takes A/Start only with the bay at rest (0x800CD6CC) and the craft's bit in the allowed mask 0x800CD6D8; the craft is read by bay (0x800CD6E4), through the ships service where it offers bay_craft (its table moves to host RAM with the new hangar ships), else from 0x800CC3F8. A denied press passes through to its deny sound.
+    const rs64_ships* ships = rs64_ghost_ships();
+    const uint32_t bay = rb(rdram, 0x800CD6E4u);
+    const int here = ships && ships->version >= 2 && ships->size >= sizeof(rs64_ships) ? ships->bay_craft((int)bay) : (int)rb(rdram, 0x800CC3F8u + bay);
+    const bool pickable = rb(rdram, 0x800CD6CCu) == 0 && here >= 0 && ((rw(rdram, 0x800CD6D8u) >> ((uint32_t)here & 31u)) & 1u) != 0;
 
     if (s.craft.local < 0 && (p & 0x9000u) && pickable) {
-        const int c = rb(rdram, 0x800CC3F8u + rb(rdram, 0x800CD6E4u));
+        const int c = here;
         s.craft.pick(c);
         s.link.send(rs64::net::encode_ready((uint8_t)c), true);
+        s.link.send(rs64::net::encode_ship(rs64_ghost_ships() ? rs64_ghost_ships()->shown() : ""), true);
 
         fprintf(stderr, "[lobby] picked craft %d, waiting for partner\n", c);
         p &= ~0x9000u;

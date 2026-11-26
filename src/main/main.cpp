@@ -115,6 +115,7 @@ extern "C" volatile uint8_t* volatile g_recomp_rdram_for_wp_raw;
 extern "C" void rs64_asset_overrides_init();
 extern "C" void rs64_camera_shots_init();
 extern "C" void rs64_mod_levels_init();
+extern "C" void rs64_ships_init();
 extern "C" void rs64_menu_config_init(void);   // menu_config.cpp
 extern "C" void rs64_entrypoint_with_rdram_capture(uint8_t* rdram, recomp_context* ctx) {
 
@@ -122,6 +123,7 @@ extern "C" void rs64_entrypoint_with_rdram_capture(uint8_t* rdram, recomp_contex
     rs64_asset_overrides_init();
     rs64_camera_shots_init();
     rs64_mod_levels_init();
+    rs64_ships_init();
     recomp_entrypoint(rdram, ctx);
 }
 
@@ -181,6 +183,13 @@ ultramodern::gfx_callbacks_t::gfx_data_t create_gfx()
     setenv("SDL_VIDEO_X11_WMCLASS", wm_class, 0);
 
 #endif
+
+    // Muted (--mute, every test launch): SDL's dummy output plays the queue back in real time without the sound card, whose opening and closing clicks other programs' audio.
+    const char* gain = recomp::dbg::env_str("ROGUESQ_AUDIO_GAIN");
+
+    if (gain && atof(gain) == 0.0) {
+        SDL_SetHint(SDL_HINT_AUDIODRIVER, "dummy");
+    }
 
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER | SDL_INIT_AUDIO | SDL_INIT_SENSOR) != 0)
     {
@@ -343,9 +352,9 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
     }
 
 #ifdef NDEBUG
-    static constexpr const char* kWindowTitle = "Star Wars: Rogue Squadron 64 Recompiled";
+    static constexpr const char* kWindowTitle = "Rogue Squadron 64 Recompiled";
 #else
-    static constexpr const char* kWindowTitle = "Star Wars: Rogue Squadron 64 Recompiled (Debug)";
+    static constexpr const char* kWindowTitle = "Rogue Squadron 64 Recompiled (Debug)";
 #endif
 
     auto create = [&] { return SDL_CreateWindow(kWindowTitle, window_x, window_y, window_w, window_h, window_flags); };
@@ -458,6 +467,7 @@ void update_gfx(ultramodern::gfx_callbacks_t::gfx_data_t)
     {
         fprintf(stderr, "[main] close requested while the game thread is held: exiting\n");
         fflush(stderr);
+        release_pad_effects();
         rs64::host::run_quit_handlers();
 
 #if defined(RS64_OPENXR)
@@ -658,6 +668,7 @@ int main(int argc, char* argv[])
     rs64::android::load_env_file();
     std::filesystem::current_path(rs64::android::data_dir());
     rs64::android::install_bundled_mods();
+    rs64::android::start_vsync_source();
 
 #endif
 
@@ -684,6 +695,12 @@ int main(int argc, char* argv[])
     }
 
     rs64::cli::register_play_link();
+
+    // Without the ubershader RT64 queues every shipped shader combination at startup; the render context quits once they are compiled and saved.
+    if (recomp::dbg::env_on("ROGUESQ_PRECOMPILE_SHADERS"))
+    {
+        rs64::cli::set_env("ROGUESQ_UBERSHADER", "0");
+    }
 
     fprintf(stderr, "[main] Rogue Squadron 64 Recompiled %s\n", RS64_VERSION_STRING);
 
@@ -748,6 +765,8 @@ int main(int argc, char* argv[])
     } else {
         fprintf(stderr, "[input] loaded bindings from %s\n", cfg.c_str());
     }
+
+    rs64::app::set_hotkeys(g_bindings.hotkeys);
 
     // Headless test runs (fake controller) must not drive the motors of a real pad that happens to be connected.
     g_report_rumble_pak.store(g_bindings.rumble.enabled && !recomp::dbg::env_on("ROGUESQ_FAKE_CONTROLLER"));
@@ -865,6 +884,13 @@ int main(int argc, char* argv[])
         }
 
         bool imported = false;
+
+        if (const char* rom_arg = recomp::dbg::env_str("ROGUESQ_ROM"))
+        {
+            imported = recomp::select_rom(std::filesystem::u8path(rom_arg), rs_game_id) == recomp::RomValidationError::Good;
+
+            fprintf(stderr, "[ROM] %s %s\n", imported ? "Imported" : "Rejected", rom_arg);
+        }
 
         for (const std::filesystem::path& dir : rom_dirs) {
             for (const char* name : rom_names) {

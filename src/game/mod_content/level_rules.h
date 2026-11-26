@@ -36,11 +36,13 @@ struct Rule {
     When when = When::Start;
     std::string object, who, custom;
     int value = 0;
+
     // counterAtLeast: the count the counter must reach.
     int count = 0;
     float seconds = 0;
     bool every = false;
     std::vector<Action> actions;
+
     // rules.txt only: the "if" (or a when true: rule's condition), and the header's line.
     CondPtr cond;
     int line = 0;
@@ -1263,6 +1265,7 @@ struct Facts {
     std::function<int(const std::string&)> health;
     std::function<bool(int)> flag;
     std::function<int32_t(int)> counter;
+
     // A native mod's check: (name, arg).
     std::function<double(const std::string&, const std::string&)> mod;
 };

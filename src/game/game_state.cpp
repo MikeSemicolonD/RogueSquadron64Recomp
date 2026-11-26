@@ -1,6 +1,8 @@
 #include "game/game_state.h"
+#include "game/hook_helpers.h"
 #include "util/debug_logs.h"
 #include "lockstep/lockstep_core.h"
+#include <algorithm>
 #include <atomic>
 #include <cstring>
 #include <cstdio>
@@ -9,7 +11,20 @@
                              // g_state_table, RS_STATE_COUNT
 
 static std::atomic<int> g_current{-1};
+
+// The boot attribution screens (menuOverlayInit action 9) run before any overlay state is set, so no table rule can see them.
+static constexpr int kAttribution = RS_STATE_COUNT;
+static constexpr int kAttributionScene = 9;
+
+static const char* state_id(int i)
+{
+
+    if (i == kAttribution) return "attribution";
+
+    return (i >= 0 && i < RS_STATE_COUNT) ? g_state_table[i].id : "unknown";
+}
 static std::atomic<bool> g_cutscene_running{false};
+static std::atomic<bool> g_cutscene_viewer{false};
 static std::atomic<uint32_t> g_cutscene_skips{0};
 static std::atomic<uint32_t> g_level{0};
 
@@ -60,25 +75,6 @@ void rs64_state_poll(const uint8_t* rdram)
 
     if (!rdram) return;
 
-    int best = -1, best_depth = -1;
-
-    for (int i = 0; i < RS_STATE_COUNT; ++i)
-    {
-        if (state_matches(rdram, g_state_table[i]) && g_state_table[i].depth > best_depth)
-        {
-            best = i;
-            best_depth = g_state_table[i].depth;
-        }
-    }
-
-    const int prev = g_current.exchange(best, std::memory_order_relaxed);
-    static const bool s_log = recomp::dbg::env_on("ROGUESQ_LOG_GAMESTATE");
-
-    if (s_log && (best != prev))
-    {
-        fprintf(stderr, "[gamestate] -> %s\n", (best >= 0) ? g_state_table[best].id : "unknown");
-    }
-
     // A cutscene timeline is playing: gCurrentCutsceneFile (0x800B1904) is loaded and gateCtr (0x800B0B28) is below its end frame (file+0x44, minus the same 0xA margin the game uses).
     // This covers the boot intro, where the "menu" predicate is a false positive (0x800CE730 is still heap), as well as in-mission cutscenes.
     bool running = false;
@@ -91,6 +87,43 @@ void rs64_state_poll(const uint8_t* rdram)
         gate = rd_be(rdram, 0x800B0B28u);
         endFrame = rd_be(rdram, cut + 0x44u);
         running = (endFrame > 0x10u) && (endFrame < 0x100000u) && (gate < endFrame - 0xAu);
+    }
+
+    int best = -1, best_depth = -1;
+
+    for (int i = 0; i < RS_STATE_COUNT; ++i)
+    {
+        if (state_matches(rdram, g_state_table[i]) && g_state_table[i].depth > best_depth)
+        {
+            best = i;
+            best_depth = g_state_table[i].depth;
+        }
+    }
+
+    // The front end's idle attract cutscene runs with no cineStatePtr, so no rule matches it.
+    if (best < 0 && running)
+    {
+        for (int i = 0; i < RS_STATE_COUNT; ++i) {
+            if (std::strcmp(g_state_table[i].id, "cinematic") == 0) best = i;
+        }
+    }
+
+    if (best < 0 && g_current_scene == kAttributionScene) best = kAttribution;
+
+    const int prev = g_current.exchange(best, std::memory_order_relaxed);
+    static const bool s_log = recomp::dbg::env_on("ROGUESQ_LOG_GAMESTATE");
+
+    // AT THE MOVIES is opened from the SHOWROOM hub; its screen id 0x0C stays in 0x800CFF50 after other menus, so it alone does not mark the viewer.
+    static bool s_from_showroom = false;
+
+    if (std::strncmp(state_id(best), "menu.", 5) == 0)
+    {
+        s_from_showroom = std::strcmp(state_id(best), "menu.showroom") == 0;
+    }
+
+    if (s_log && (best != prev))
+    {
+        fprintf(stderr, "[gamestate] -> %s\n", state_id(best));
     }
 
     static uint32_t s_gate = 0;
@@ -106,7 +139,10 @@ void rs64_state_poll(const uint8_t* rdram)
 
     if (running && !was_running)
     {
-        fprintf(stderr, "[cutscene] started at frame %u of %u\n", gate, endFrame);
+        // AT THE MOVIES runs its cutscenes on screen 0x0C (u16 at 0x800CFF50).
+        g_cutscene_viewer.store(s_from_showroom && (rd_be(rdram, 0x800CFF50u) >> 16) == 0x0C, std::memory_order_relaxed);
+
+        fprintf(stderr, "[cutscene] started at frame %u of %u (level %u %s)\n", gate, endFrame, rs64_state_cutscene_level(), rs64_state_cutscene_kind());
     }
 
     s_gate = gate;
@@ -119,6 +155,30 @@ extern "C" uint32_t rs64_state_level(void) {
     return g_level.load(std::memory_order_relaxed);
 }
 
+static std::atomic<uint32_t> g_cutscene_level{0};
+static std::atomic<uint32_t> g_cutscene_kind{0};
+
+extern "C" void rs64_state_cutscene_note(uint32_t level, uint32_t kind)
+{
+
+    g_cutscene_level.store(level & 0xFFu, std::memory_order_relaxed);
+    g_cutscene_kind.store(kind & 0xFFu, std::memory_order_relaxed);
+}
+
+extern "C" uint32_t rs64_state_cutscene_level(void) {
+    return g_cutscene_level.load(std::memory_order_relaxed);
+}
+
+extern "C" const char* rs64_state_cutscene_kind(void)
+{
+
+    static constexpr const char* kKinds[] = { "intro", "outro", "special", "cutscene" };
+    static constexpr const char* kViewer[] = { "intro, AT THE MOVIES", "outro, AT THE MOVIES", "special, AT THE MOVIES", "cutscene, AT THE MOVIES" };
+    const uint32_t kind = std::min(g_cutscene_kind.load(std::memory_order_relaxed), 3u);
+
+    return (g_cutscene_viewer.load(std::memory_order_relaxed) ? kViewer : kKinds)[kind];
+}
+
 extern "C" int rs64_state_current(void) {
     return g_current.load(std::memory_order_relaxed);
 }
@@ -126,9 +186,7 @@ extern "C" int rs64_state_current(void) {
 extern "C" const char* rs64_state_current_id(void)
 {
 
-    int i = g_current.load(std::memory_order_relaxed);
-
-    return (i >= 0 && i < RS_STATE_COUNT) ? g_state_table[i].id : "unknown";
+    return state_id(g_current.load(std::memory_order_relaxed));
 }
 
 // ---- Force: stage values that TOML slot hooks consume at natural transition points. ----

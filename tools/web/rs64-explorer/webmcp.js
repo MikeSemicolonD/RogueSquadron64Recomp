@@ -871,6 +871,50 @@ const WEBMCP_TOOLS = [
     },
   },
   {
+    name: 'rs64_new_ship',
+    edit: true,
+    description: 'Makes a new hangar ship that flies as a stock craft (craft: xwing ywing awing vwing speeder falcon naboo): a copy of that craft\'s model named after the ship, standing in a free hangar spot, with the hangar showing name. Opens its model, ready for Import model.',
+    inputSchema: {
+      type: 'object',
+      properties: { craft: { type: 'string', enum: Object.keys(SHIP_TEMPLATES) }, name: { type: 'string', minLength: 1 } },
+      required: ['craft', 'name']
+    },
+    run: async ({ craft, name }) => {
+      mcpNeedRom();
+
+      if (!shipNew(shipsParse(await virtualText(MOD_SHIPS)), name, craft, [], await rom.read(HANGAR_DAT)))
+        throw new Error(`The hangar has room for ${SHIP_MAX} new ships, and they are all taken`);
+
+      setMode('models');
+      await showModel(SHIP_TEMPLATES[craft].model);
+
+      const ship = await newShip(name);
+
+      return { ship, model: `data/pl_crafts/${ship.id}` };
+    },
+  },
+  {
+    name: 'rs64_place_ship',
+    edit: true,
+    description: 'Moves a new hangar ship (id from rs64_new_ship) to stand near hangar floor point x, z: on the camera\'s line through it, the camera stopping where its routes pass nearest. Returns its camera stop.',
+    inputSchema: {
+      type: 'object',
+      properties: { ship: { type: 'string' }, x: { type: 'number' }, z: { type: 'number' } },
+      required: ['ship', 'x', 'z']
+    },
+    run: async ({ ship, x, z }) => {
+      mcpNeedRom();
+
+      if (!modShips.some((s) => s.id === ship))
+        throw new Error(`No new ship ${ship}`);
+
+      setMode('models');
+      await showModel(`data/pl_crafts/${ship}`);
+
+      return { ship: await placeShip([x, z]) };
+    },
+  },
+  {
     name: 'rs64_mod_level_get',
     edit: false,
     description: 'A mod level\'s settings as levels.json holds them (docs/guides/modding.md "New levels"): title, description, voice, craft, objectives, medals, music, crawl and the rest. Defaults to the open level.',
@@ -1656,12 +1700,18 @@ const WEBMCP_TOOLS = [
   {
     name: 'rs64_crawl',
     edit: true,
-    description: 'Reads or sets the opening crawl of a level (a stock chapter level 0, 5, 10, 15, or a mod level; defaults to the open level): chapter, title and body text. The first change makes the mod\'s own crawl (replacing that chapter\'s, or the one the mod level names). Characters the crawl font lacks are listed in fontGaps.',
+    description: 'Reads or sets the opening crawl of a level (a stock chapter level 0, 5, 10, 15, or a mod level; defaults to the open level): chapter, title and body text, and planet (0-3: the stock backdrop and fly-by ships). The first change makes the mod\'s own crawl (replacing that chapter\'s, or the one the mod level names). Characters the crawl font lacks are listed in fontGaps.',
     inputSchema: {
       type: 'object',
-      properties: { level: { type: 'string' }, chapter: { type: 'string' }, title: { type: 'string' }, body: { type: 'string' } }
+      properties: {
+        level: { type: 'string' },
+        chapter: { type: 'string' },
+        title: { type: 'string' },
+        body: { type: 'string' },
+        planet: { type: 'integer', minimum: 0, maximum: 3 }
+      }
     },
-    run: async ({ level, chapter, title, body }) => {
+    run: async ({ level, chapter, title, body, planet }) => {
       mcpNeedRom();
 
       const dir = mcpRulesLevel(level);
@@ -1672,10 +1722,13 @@ const WEBMCP_TOOLS = [
 
       const change = Object.fromEntries(Object.entries({ chapter, title, body }).filter(([, v]) => v !== undefined));
 
-      if (Object.keys(change).length)
+      if (planet != null)
+        ctx.base = planet;
+
+      if (Object.keys(change).length || planet != null)
         await saveCrawl(ctx, 'text', change);
 
-      const now = Object.keys(change).length ? await levelCrawl(dir) : ctx;
+      const now = Object.keys(change).length || planet != null ? await levelCrawl(dir) : ctx;
 
       return {
         level: dir,
@@ -1685,6 +1738,7 @@ const WEBMCP_TOOLS = [
         chapter: now.c.chapter,
         title: now.c.title,
         body: now.c.body,
+        planet: now.base,
         fontGaps: crawlFontGaps(`${now.c.chapter}${now.c.title}${now.c.body}`)
       };
     },

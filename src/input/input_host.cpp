@@ -190,7 +190,7 @@ extern "C" bool rs64_input_name(const char* name, uint16_t* mask, float* sx, flo
     return false;
 }
 
-// gate: a game state id prefix the sequence waits for before the next step ("@menu.account.level_select"); its timing starts from there.
+// gate: a game state id prefix the sequence waits for before the next step ("@menu.level_select"); its timing starts from there.
 // True from a passed state gate until the sequence ends: the sequence then steers instead of the menu driver.
 static bool s_seq_steering = false;
 
@@ -338,6 +338,43 @@ extern "C" void rs64_menu_request_quit(void) {
 // from update_gfx (main thread) to toggle relative-mouse mode, so it is atomic.
 rs64::input::Bindings g_bindings = rs64::input::default_bindings();
 std::mutex            g_bindings_mtx;
+
+// Set once at startup, before the window exists; read by the event pump on the gfx thread.
+static rs64::input::HotkeyConfig s_hotkeys;
+
+void set_hotkeys(const rs64::input::HotkeyConfig& c)
+{
+
+    s_hotkeys = c;
+    s_hotkeys.enabled = recomp::dbg::env_on("ROGUESQ_HOTKEYS", c.enabled);
+}
+
+rs64::input::Hotkey hotkey_at(int scancode)
+{
+    return rs64::input::hotkey_at(s_hotkeys, scancode);
+}
+
+std::string hotkey_key(rs64::input::Hotkey h)
+{
+    return s_hotkeys.keys[(int)h];
+}
+
+extern "C" int rs64_game_paused(void)
+{
+
+    const uint8_t* rd = (const uint8_t*)g_recomp_rdram_for_wp_raw;
+
+    return (rd != nullptr) && rs64::touch::read_paused(rd);
+}
+
+// RT64's DeveloperShortcut order matches the first four hotkeys.
+extern "C" int rs64_dev_shortcut(int scancode)
+{
+
+    const rs64::input::Hotkey h = hotkey_at(scancode);
+
+    return (h <= rs64::input::Hotkey::TexturePacks) ? (int)h : -1;
+}
 std::atomic<bool>     g_show_controls{false};
 std::atomic<bool>     g_show_fps{false};
 std::atomic<bool>     g_mouse_capture{false};
@@ -383,24 +420,38 @@ extern "C" float rs64_throttle_cruise_live(void) {
     return g_bindings.throttle_cruise;
 }
 
-// Per-craft speed hooks in rogue_squadron.toml call this just before the craft's current speed steps toward its
-// target. Addresses are f32 game constants (base_addr 0 = unscaled, cruise_addr 0 = none); a nonzero f32 at
-// skip_addr (a scripted boost) keeps the game's target.
-extern "C" float rs64_throttle_hook(uint8_t* rdram, float target, uint32_t base_addr, uint32_t floor_addr, uint32_t cruise_addr, uint32_t cap_addr, uint32_t skip_addr)
+std::atomic<uint32_t> g_trigger_feel{0};
+std::atomic<int64_t> g_trigger_feel_ms{0};
+
+// Per-craft speed hooks in rogue_squadron.toml call this just before the craft's current speed (f32 at speed_addr) steps
+// toward its target. Addresses are f32 game constants (base_addr 0 = unscaled); a nonzero f32 at skip_addr (a scripted
+// boost) keeps the game's target. A craft without a cruise constant (cruise_addr 0) cruises cruise_ratio of the way from
+// floor to cap, and the game's own brake lands brake_ratio of the way from floor to cruise.
+extern "C" float rs64_throttle_hook(uint8_t* rdram, float target, uint32_t speed_addr, uint32_t base_addr, uint32_t floor_addr, uint32_t cruise_addr, uint32_t cap_addr, uint32_t skip_addr, float cruise_ratio, float brake_ratio)
 {
+
+    auto f32 = [rdram](uint32_t addr) { float f; memcpy(&f, rdram + (addr - 0x80000000u), 4); return f; };
+
+    const float base = base_addr ? f32(base_addr) : 1.0f;
+    const float floor_speed = base * f32(floor_addr);
+    const float max_speed = base * f32(cap_addr);
+    const float cruise_speed = cruise_addr ? base * f32(cruise_addr) : floor_speed + cruise_ratio * (max_speed - floor_speed);
+    const float min_speed = floor_speed + brake_ratio * (cruise_speed - floor_speed);
+
+    if (max_speed > min_speed)
+    {
+        const float speed = f32(speed_addr);
+        const float eps = 0.01f * max_speed;
+
+        g_trigger_feel.store((speed < max_speed - eps ? 1u : 0u) | (speed > cruise_speed + eps ? 2u : 0u));
+        g_trigger_feel_ms.store(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+    }
 
     const float p = rs64_ls_throttle(rs64_throttle_live());
 
     if (p < 0.0f) return target;
 
-    auto f32 = [rdram](uint32_t addr) { float f; memcpy(&f, rdram + (addr - 0x80000000u), 4); return f; };
-
     if (skip_addr && f32(skip_addr) != 0.0f) return target;
-
-    const float base = base_addr ? f32(base_addr) : 1.0f;
-    const float min_speed = base * f32(floor_addr);
-    const float max_speed = base * f32(cap_addr);
-    const float cruise_speed = cruise_addr ? base * f32(cruise_addr) : -1.0f;
 
     if (!(max_speed > min_speed)) return target;
 
@@ -798,28 +849,41 @@ static SDL_Sensor* g_accel_sensor = nullptr;
 static SDL_Sensor* g_gyro_sensor = nullptr;
 static std::atomic<bool> g_pad_gyro{false};
 
-// Tilt steering: screen roll from gravity, low-passed so hand shake and linear acceleration don't jitter the turn.
-static void accel_event(const SDL_Event& e)
+// The browser's motion events arrived (rs64_web_motion): they stand in for the SDL sensors it lacks.
+static std::atomic<bool> g_web_motion{false};
+
+// Tilt steering: screen roll from gravity (m/s^2, device axes), low-passed so hand shake and linear acceleration don't jitter the turn.
+static void accel_sample(float x, float y, float z, bool flipped)
 {
 
     static float s_roll = 0.0f;
-    const bool flipped = SDL_GetDisplayOrientation(0) == SDL_ORIENTATION_LANDSCAPE_FLIPPED;
     float roll = 0.0f;
-    const bool valid = rs64::touch::tilt_angles(e.sensor.data[0], e.sensor.data[1], e.sensor.data[2], flipped, &roll);
+    const bool valid = rs64::touch::tilt_angles(x, y, z, flipped, &roll);
     s_roll += (roll - s_roll) * 0.25f;
     std::lock_guard<std::mutex> lk(g_touch_mtx);
     g_touch.tilt(s_roll, valid);
 }
 
-// Gyro rates for the steering assist and mouse-like up/down. Device axes are portrait-natural: the screen normal is device z (+ = counter-clockwise, so negate
+// Gyro rates (rad/s) for the steering assist and mouse-like up/down. Device axes are portrait-natural: the screen normal is device z (+ = counter-clockwise, so negate
 // for clockwise), and tipping the top edge away turns about screen-right (device -y, flipped on the other landscape side).
-static void gyro_event(const SDL_Event& e)
+static void gyro_sample(float y, float z, bool flipped)
 {
 
-    const bool flipped = SDL_GetDisplayOrientation(0) == SDL_ORIENTATION_LANDSCAPE_FLIPPED;
     const float s = flipped ? -1.0f : 1.0f;
     std::lock_guard<std::mutex> lk(g_touch_mtx);
-    g_touch.gyro_rate(-e.sensor.data[2], s * e.sensor.data[1]);
+    g_touch.gyro_rate(-z, s * y);
+}
+
+static bool landscape_flipped() {
+    return SDL_GetDisplayOrientation(0) == SDL_ORIENTATION_LANDSCAPE_FLIPPED;
+}
+
+static void accel_event(const SDL_Event& e) {
+    accel_sample(e.sensor.data[0], e.sensor.data[1], e.sensor.data[2], landscape_flipped());
+}
+
+static void gyro_event(const SDL_Event& e) {
+    gyro_sample(e.sensor.data[1], e.sensor.data[2], landscape_flipped());
 }
 
 static SDL_Sensor* open_sensor(SDL_SensorType type) {
@@ -880,7 +944,7 @@ static void update_gyro_sensor() {
 
     std::lock_guard<std::mutex> lk(g_touch_mtx);
     rs64::touch::Config tc = g_touch.config();
-    tc.gyro = want && g_accel_sensor;
+    tc.gyro = want && (g_accel_sensor || g_web_motion.load());
     g_touch.set_config(tc);
 
     if (!g_gyro_sensor) {
@@ -960,6 +1024,21 @@ extern "C" EMSCRIPTEN_KEEPALIVE void rs64_web_paste(const char* text)
     std::lock_guard<std::mutex> lk(g_paste_mtx);
 
     g_pasted = text ? text : "";
+}
+
+// The page's devicemotion events: gravity (m/s^2) and rotation rate (rad/s) on device axes, and whether the screen is the other landscape way up.
+extern "C" EMSCRIPTEN_KEEPALIVE void rs64_web_motion(float ax, float ay, float az, float gy, float gz, int flipped)
+{
+
+    g_web_motion.store(true);
+
+    if (!rs64::touch::gyro_enabled())
+    {
+        return;
+    }
+
+    accel_sample(ax, ay, az, flipped != 0);
+    gyro_sample(gy, gz, flipped != 0);
 }
 
 static std::string take_pasted()
@@ -1102,7 +1181,7 @@ void poll_input()
             note_physical_input();
             s_last_device.store(rs64::input::Device::Keyboard);
 
-            // F6 toggles the controls/rebind window. Mouse-steering capture is automatic (focus-driven, in update_gfx).
+            // Mouse-steering capture is automatic (focus-driven, in update_gfx). The function shortcuts come from roguesq_input.json's hotkeys.
             if (e.key.repeat == 0)
             {
                 switch (e.key.keysym.scancode) {
@@ -1110,36 +1189,6 @@ void poll_input()
                         if (e.key.keysym.mod & KMOD_ALT) rs64_toggle_fullscreen();
 
                         break;
-                    case SDL_SCANCODE_F6:
-                        g_show_controls.store(!g_show_controls.load());
-                        break;
-                    case SDL_SCANCODE_F7:
-                        g_show_fps.store(!g_show_fps.load());
-                        break;
-                    case SDL_SCANCODE_F8:
-                        if (rs64_vr_active()) {
-                            g_vr_mouse_look.store(!g_vr_mouse_look.load());
-                            rs64::app::notify("vrlook", g_vr_mouse_look.load() ? "Mouse turns the VR head (F8)" : "Mouse steers (F8)", 2.0f);
-                        }
-
-                        break;
-                    case SDL_SCANCODE_F5: {
-                        // Factor 5's frame-profiler/debug-text HUD: gate byte 0x80038CE0 (retail leaves it 0). ^3 = N64 byte order.
-                        if (uint8_t* rd = (uint8_t*)g_recomp_rdram_for_wp_raw) {
-                            uint8_t& gate = rd[0x38CE0 ^ 3];
-                            gate = gate ? 0 : 1;
-
-                            fprintf(stderr, "[F5] profiler HUD gate 0x80038CE0 -> %u\n", gate);
-                            fflush(stderr);
-                        }
-                        break;
-                    }
-                    case SDL_SCANCODE_F9: {
-                        const rs64lights::DebugView& view = rs64lights::stepDebugView((e.key.keysym.mod & KMOD_SHIFT) ? -1 : 1);
-
-                        rs64::app::notify("rtdebug", std::string("RT debug view: ") + view.name + "  (F9 next, Shift+F9 previous)", 3.0f);
-                        break;
-                    }
                     case SDL_SCANCODE_ESCAPE:
                         // Esc closes the controls window; otherwise it falls through to the game (bound to Start/pause).
                         if (g_show_controls.load()) {
@@ -1151,24 +1200,63 @@ void poll_input()
                     default:
                         break;
                 }
-            }
 
-            if (sym == SDLK_F12) {
-                fprintf(stderr, "[F12] manual minidump requested\n");
-                fflush(stderr);
-                rs64::app::notify("dump", "Saving a memory dump (F12). The game may freeze until it is written.", 60.0f);
+                using rs64::input::Hotkey;
 
-                // A moment's delay lets the notice draw before the dump stalls the process.
-                std::thread([] {
+                switch (hotkey_at(e.key.keysym.scancode)) {
+                    case Hotkey::Controls:
+                        g_show_controls.store(!g_show_controls.load());
+                        break;
+                    case Hotkey::Fps:
+                        g_show_fps.store(!g_show_fps.load());
+                        break;
+                    case Hotkey::VrLook:
+                        if (rs64_vr_active()) {
+                            const std::string key = " (" + hotkey_key(Hotkey::VrLook) + ")";
 
-                    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+                            g_vr_mouse_look.store(!g_vr_mouse_look.load());
+                            rs64::app::notify("vrlook", (g_vr_mouse_look.load() ? "Mouse turns the VR head" : "Mouse steers") + key, 2.0f);
+                        }
 
-                    if (rs64::crash::write_minidump_safe(nullptr)) {
-                        rs64::app::notify("dump", std::string("Memory dump saved: ") + rs64::crash::last_minidump_path(), 6.0f);
-                    } else {
-                        rs64::app::notify("dump", "Memory dump failed (see the log).", 6.0f);
+                        break;
+                    case Hotkey::Profiler: {
+                        // Factor 5's frame-profiler/debug-text HUD: gate byte 0x80038CE0 (retail leaves it 0). ^3 = N64 byte order.
+                        if (uint8_t* rd = (uint8_t*)g_recomp_rdram_for_wp_raw) {
+                            uint8_t& gate = rd[0x38CE0 ^ 3];
+                            gate = gate ? 0 : 1;
+
+                            fprintf(stderr, "[F5] profiler HUD gate 0x80038CE0 -> %u\n", gate);
+                            fflush(stderr);
+                        }
+                        break;
                     }
-                }).detach();
+                    case Hotkey::RtDebugView: {
+                        const rs64lights::DebugView& view = rs64lights::stepDebugView((e.key.keysym.mod & KMOD_SHIFT) ? -1 : 1);
+                        const std::string key = hotkey_key(Hotkey::RtDebugView);
+
+                        rs64::app::notify("rtdebug", std::string("RT debug view: ") + view.name + "  (" + key + " next, Shift+" + key + " previous)", 3.0f);
+                        break;
+                    }
+                    case Hotkey::Dump:
+                        fprintf(stderr, "[F12] manual minidump requested\n");
+                        fflush(stderr);
+                        rs64::app::notify("dump", "Saving a memory dump (" + hotkey_key(Hotkey::Dump) + "). The game may freeze until it is written.", 60.0f);
+
+                        // A moment's delay lets the notice draw before the dump stalls the process.
+                        std::thread([] {
+
+                            std::this_thread::sleep_for(std::chrono::milliseconds(250));
+
+                            if (rs64::crash::write_minidump_safe(nullptr)) {
+                                rs64::app::notify("dump", std::string("Memory dump saved: ") + rs64::crash::last_minidump_path(), 6.0f);
+                            } else {
+                                rs64::app::notify("dump", "Memory dump failed (see the log).", 6.0f);
+                            }
+                        }).detach();
+                        break;
+                    default:
+                        break;
+                }
             }
 
             // Diagnostic: F1-F4 reaching PollEvent means SDL delivers them; RT64's filter (which runs first) may have consumed them already.
@@ -1202,6 +1290,7 @@ void poll_input()
         case SDL_QUIT:
             fprintf(stderr, "[main] SDL_QUIT received, exiting\n");
             fflush(stderr);
+            release_pad_effects();
             rs64::host::run_quit_handlers();
 
 #if defined(RS64_OPENXR)
@@ -1682,16 +1771,14 @@ uint16_t n64_buttons()
 bool get_n64_input(int controller_num, uint16_t* buttons, float* x, float* y)
 {
 
-    return rs64::ls::session_input(controller_num, buttons, x, y, [](int c, uint16_t* b, float* sx, float* sy) {
-        const bool ok = get_n64_input_live(c, b, sx, sy);
+    const bool ok = get_n64_input_live(controller_num, buttons, x, y);
 
-        if (c == 0) {
-            rs64::host::run_input_filters(0, b, sx, sy);
-            s_n64_buttons.store(*b);
-        }
+    if (controller_num == 0) {
+        rs64::host::run_input_filters(0, buttons, x, y);
+        s_n64_buttons.store(*buttons);
+    }
 
-        return ok;
-    });
+    return ok;
 }
 
 void set_rumble(int controller_num, bool on) {

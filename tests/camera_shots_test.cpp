@@ -151,6 +151,19 @@ int main() {
     // only_camera_items_play: the item's u16 subtype (high half of its first word) must be 0x26
     CHECK(isCameraItem(0x00260000u));
     CHECK(!isCameraItem(0x00180700u) && !isCameraItem(0x00000026u));
+    // replace_lines_swap_the_script_camera_and_are_not_links: the later line wins, none plays nothing, other levels keep theirs
+    {
+        const char* text = "lv_b FacilityCamera replace cam_a\nlv_b FacilityCamera replace HeavyCam\nlv_b OtherCam replace none\nlv_b t cam_x\n";
+        std::vector<Swap> swaps;
+        addSwaps(swaps, text);
+        CHECK(swaps.size() == 2);
+        CHECK(swapFor(swaps, "lv_b", "FacilityCamera") == std::optional<std::string>("HeavyCam"));
+        CHECK(swapFor(swaps, "lv_b", "OtherCam") == std::optional<std::string>(""));
+        CHECK(!swapFor(swaps, "lv_0", "FacilityCamera"));
+        const auto links = one(text);
+        CHECK(links.size() == 1 && links[0].trigger == "t");
+    }
+
     std::printf("camera_shots_test: ok\n");
     return 0;
 }

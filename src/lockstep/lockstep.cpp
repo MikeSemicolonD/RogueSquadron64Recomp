@@ -3,6 +3,7 @@
 #include "util/rdram_words.h"
 #include "game/game_state.h"
 #include "game/hook_helpers.h"
+#include "game/nav_sequencer.h"
 #include "util/debug_logs.h"
 #include "host_api/host_api.h"
 #include "main/main.h"
@@ -38,6 +39,13 @@ using rs64::mips::ww;
 
 enum class Mode { Off, Record, Replay };
 
+// Recorded audio-thread answers by mission frame, served in query order within a frame.
+struct AudioAnswers {
+    std::map<uint32_t, std::vector<uint8_t>> by_frame;
+    uint32_t frame = 0xFFFFFFFFu;
+    size_t idx = 0;
+};
+
 struct State {
     Mode mode = Mode::Off;
     bool active = false;
@@ -57,13 +65,19 @@ struct State {
     // Replay with ROGUESQ_LS_RECORD also set: replays one file and writes an upgraded copy (inputs replayed, audio answers live).
     bool rerecord = false;
     bool resume = false;
-    std::map<uint32_t, std::vector<uint8_t>> song;
-    uint32_t song_frame = 0xFFFFFFFFu;
-    size_t song_idx = 0;
+    AudioAnswers song;
+    AudioAnswers speech;
 
     // The god-mode bit of gGameSettingsFlags (0x80130B4C) is set by the invincibility mod after the session hook, inside initMission.
     uint32_t god = 0;
     long flags0_at = -1;
+
+    // Mission logic rate of this session, and this frame's final dt (rs64_ls_rate_dt) above 30.
+    uint32_t hz = 30;
+    float dt = 0.0f;
+
+    // The mission plays with normal play's gameplay widenings (a new recording, or a replay of one); false keeps them stock.
+    bool live = false;
 };
 
 constexpr uint32_t kSettingsFlags = 0x80130B4Cu;
@@ -76,6 +90,7 @@ State& st() {
     return s;
 }
 
+// ROGUESQ_LS_SEED for record mode; 0 keeps the game's own RNG state.
 uint32_t ls_seed() {
 
     static const uint32_t seed = []() {
@@ -84,16 +99,14 @@ uint32_t ls_seed() {
 
         if (!e)
         {
-            return 1u;
+            return 0u;
         }
 
         const uint32_t v = parse_seed(e);
 
         if (v == 0)
         {
-            fprintf(stderr, "[ls] ROGUESQ_LS_SEED=%s is not a nonzero number; keeping seed 1\n", e);
-
-            return 1u;
+            fprintf(stderr, "[ls] ROGUESQ_LS_SEED=%s is not a nonzero number; keeping the game's own seed\n", e);
         }
 
         return v;
@@ -115,6 +128,136 @@ Mode mode() {
     }();
 
     return m;
+}
+
+// ROGUESQ_LS_REPLAY=<a.rec>;<b.rec>;...: one recording per mission, in order, in one launch.
+const std::vector<std::string>& playlist()
+{
+
+    static const std::vector<std::string> list = [] {
+
+        std::vector<std::string> v;
+        const char* e = recomp::dbg::env_str("ROGUESQ_LS_REPLAY");
+        const std::string all = e ? e : "";
+
+        for (size_t at = 0; at < all.size();) {
+            size_t end = all.find(';', at);
+
+            if (end == std::string::npos) end = all.size();
+
+            if (end > at) v.push_back(all.substr(at, end - at));
+
+            at = end + 1;
+        }
+
+        return v;
+    }();
+
+    return list;
+}
+
+// Mission init leaves parts of gPlayers[0], the life count and the rumble handle counter (handles land in gPlayers+0x1C0) from the previous mission;
+// a chained replay restores what the first mission started with.
+constexpr uint32_t kPlayer0 = 0x80137DB8u;
+constexpr uint32_t kPlayerSize = 0x2A0u;
+constexpr uint32_t kNumLives = 0x80130B10u;
+constexpr uint32_t kRumbleNextHandle = 0x80110744u;
+
+struct FreshStart {
+    bool taken = false;
+    std::vector<uint8_t> player;
+    uint8_t lives = 0;
+    uint32_t rumble_handle = 0;
+};
+
+void fresh_start(uint8_t* rdram, bool restore)
+{
+
+    static FreshStart s_fresh;
+
+    if (!restore) {
+        s_fresh.player.resize(kPlayerSize);
+
+        for (uint32_t i = 0; i < kPlayerSize; ++i) {
+            s_fresh.player[i] = rb(rdram, kPlayer0 + i);
+        }
+
+        s_fresh.lives = rb(rdram, kNumLives);
+        s_fresh.rumble_handle = rw(rdram, kRumbleNextHandle);
+        s_fresh.taken = true;
+
+        return;
+    }
+
+    if (!s_fresh.taken)
+    {
+        return;
+    }
+
+    // +0x4 and +0xC0 are heap pointers into the loaded level.
+    for (uint32_t i = 0; i < kPlayerSize; ++i) {
+        if ((i & ~3u) == 0x4 || (i & ~3u) == 0xC0) continue;
+
+        wb(rdram, kPlayer0 + i, s_fresh.player[i]);
+    }
+
+    wb(rdram, kNumLives, s_fresh.lives);
+    ww(rdram, kRumbleNextHandle, s_fresh.rumble_handle);
+}
+
+// ROGUESQ_LS_HEAP_DUMP=<folder>: at each lockstep mission start (and at mission frame ROGUESQ_LS_HEAP_DUMP_AT), the game heap's blocks (initMainHeap's list from 0x8010FF18:
+// u16 state 1 free / 2 used / 6 reserved / 8 end, u16 allocation flags, u32 size, data at +0x10) go to <folder>/missionNN_levelL[_fF].heap, with a summary line in the log.
+void dump_game_heap(const uint8_t* rdram, int mission, uint32_t level, long frame)
+{
+
+    const char* dir = recomp::dbg::env_str("ROGUESQ_LS_HEAP_DUMP");
+
+    if (!dir)
+    {
+        return;
+    }
+
+    char name[80];
+
+    if (frame < 0) {
+        snprintf(name, sizeof(name), "mission%02d_level%u.heap", mission, level);
+    } else {
+        snprintf(name, sizeof(name), "mission%02d_level%u_f%ld.heap", mission, level, frame);
+    }
+
+    const std::string path = (std::filesystem::path(dir) / name).string();
+    FILE* f = fopen(path.c_str(), "wb");
+    uint32_t blk = rw(rdram, 0x8010FF18u);
+    uint32_t used = 0;
+    uint32_t used_bytes = 0;
+    uint32_t free_bytes = 0;
+    uint32_t largest_free = 0;
+
+    for (int n = 0; n < 200000 && blk >= 0x80000000u && blk < 0x807FFFF0u; ++n) {
+        const uint32_t state = ((uint32_t)rb(rdram, blk) << 8) | rb(rdram, blk + 1);
+        const uint32_t tag = ((uint32_t)rb(rdram, blk + 2) << 8) | rb(rdram, blk + 3);
+        const uint32_t size = rw(rdram, blk + 4);
+
+        if (state & 8) break;
+
+        if (f) fprintf(f, "%08X %u %04X %08X\n", blk, state, tag, size);
+
+        if (state == 2) {
+            used++;
+            used_bytes += size;
+        } else if (state == 1) {
+            free_bytes += size;
+            largest_free = std::max(largest_free, size);
+        }
+
+        blk += 0x10 + size;
+    }
+
+    if (f) fclose(f);
+
+    // The texture pool (getLoadedTextureCount): texture data grows up from 0x8011A7D8, TLUTs down from 0x8011A7D0; loadLevelTextureCache sizes the level's cache from the gap.
+    fprintf(stderr, "[heap] mission %d level %u: %u blocks used (%u bytes), %u bytes free, largest free %u; texture pool data %08X tlut %08X -> %s\n", mission, level, used, used_bytes,
+            free_bytes, largest_free, rw(rdram, 0x8011A7D8u), rw(rdram, 0x8011A7D0u), path.c_str());
 }
 
 void close_files() {
@@ -157,7 +300,7 @@ bool dump_frame(uint32_t frame)
     return range.first >= 0 && (long)frame >= range.first && (long)frame <= range.second;
 }
 
-void end_session(const char* why)
+void end_session(uint8_t* rdram, const char* why)
 {
 
     State& s = st();
@@ -168,9 +311,33 @@ void end_session(const char* why)
     s.active = false;
     static const bool keep_running = recomp::dbg::env_on("ROGUESQ_LS_KEEP_RUNNING");
 
-    if (s.mode == Mode::Replay && !keep_running) {
-        rs64_menu_request_quit();
+    if (s.mode != Mode::Replay || keep_running)
+    {
+        return;
     }
+
+    // A playlist names the next recording's level and craft to the nav chain instead of quitting.
+    if (s.missions > 0 && (size_t)s.missions < playlist().size()) {
+        const std::string& next = playlist()[(size_t)s.missions];
+        SessionHeader h;
+        std::vector<FrameInput> frames;
+        std::map<uint32_t, std::vector<uint8_t>> song;
+
+        if (load_replay(next.c_str(), &h, &frames, &song))
+        {
+            // SELECT LEVEL lists the bonus levels from these unlock and passcode words, so the next pilot's are in place before it opens.
+            ww(rdram, 0x80130B4Cu, h.flags0);
+            ww(rdram, 0x80130B58u, h.cheats0);
+            ww(rdram, 0x80130B5Cu, h.cheats1);
+
+            fprintf(stderr, "[ls] playlist: next %s (level %u craft %u)\n", next.c_str(), h.level, h.craft);
+            rs64_nav_chain_next((int)h.level, (int)h.craft, true);
+
+            return;
+        }
+    }
+
+    rs64_menu_request_quit();
 }
 
 FILE* open_hash(const std::string& path) {
@@ -224,15 +391,18 @@ extern "C" void rs64_ls_on_mission_init(uint8_t* rdram, recomp_context*)
     s.missions++;
 
     // ROGUESQ_LS_EACH_MISSION=1 (smoke tests chaining levels in one launch): every mission starts a new session, rewriting the recording.
-    static const bool each = recomp::dbg::env_on("ROGUESQ_LS_EACH_MISSION");
+    static const bool each = recomp::dbg::env_on("ROGUESQ_LS_EACH_MISSION") || playlist().size() > 1;
+
+    // A live recording keeps going through a retry or the next mission, into <name>_try<N>.rec: one file per mission attempt.
+    const bool next_file = s.mode == Mode::Record;
 
     if (s.missions > 1) {
         if (s.active)
         {
-            end_session(each ? "next mission" : "second initMission (one recording = one mission attempt)");
+            end_session(rdram, each ? "next mission" : next_file ? "mission restarted, recording the next attempt" : "second initMission (one recording = one mission attempt)");
         }
 
-        if (!each) return;
+        if (!each && !next_file) return;
 
         const int missions = s.missions;
 
@@ -249,17 +419,23 @@ extern "C" void rs64_ls_on_mission_init(uint8_t* rdram, recomp_context*)
 
     if (s.mode == Mode::Record)
     {
-        const char* path = recomp::dbg::env_str("ROGUESQ_LS_RECORD");
-        SessionHeader h = read_session(rdram, ghost ? rw(rdram, 0x80003470u) : seed);
+        const std::string path = attempt_path(recomp::dbg::env_str("ROGUESQ_LS_RECORD"), each ? 1 : s.missions);
+        // The game's own RNG state is saved and the replay restores it, so a recorded mission plays as randomly as an unrecorded one; ROGUESQ_LS_SEED forces one.
+        SessionHeader h = read_session(rdram, (ghost || seed == 0) ? rw(rdram, 0x80003470u) : seed);
         h.build = __DATE__ " " __TIME__;
         h.widescreen = (uint32_t)rs64::video::display_value(rs64::video::Display::Widescreen);
         h.draw_pct = (uint32_t)std::lround(rs64_draw_dist_setting() * 100.0f);
         s.cruise = rs64_throttle_cruise_live();
         memcpy(&h.cruise_bits, &s.cruise, 4);
-        s.rec = fopen(path, "wb");
+        h.ship = rs64_ships_flying_id();
+        h.hz = ghost ? 30u : (uint32_t)rs64_logic_hz();
+        s.hz = h.hz;
+        h.live = ghost ? 0u : 1u;
+        s.live = !ghost;
+        s.rec = fopen(path.c_str(), "wb");
 
         if (!s.rec) {
-            fprintf(stderr, "[ls] cannot write %s\n", path);
+            fprintf(stderr, "[ls] cannot write %s\n", path.c_str());
 
             return;
         }
@@ -271,16 +447,26 @@ extern "C" void rs64_ls_on_mission_init(uint8_t* rdram, recomp_context*)
         fflush(s.rec);
 
         if (!ghost) {
-            s.hash = open_hash(std::string(path) + ".hash");
+            s.hash = open_hash(path + ".hash");
             ww(rdram, 0x80003470u, h.seed);
         }
 
-        fprintf(stderr, "[ls] recording level %u craft %u seed %u -> %s%s\n", h.level, h.craft, h.seed, path, ghost ? " (co-op: input only)" : "");
+        fprintf(stderr, "[ls] recording level %u craft %u seed %u at %u Hz -> %s%s\n", h.level, h.craft, h.seed, h.hz, path.c_str(), ghost ? " (co-op: input only)" : "");
     } else if (s.mode == Mode::Replay) {
-        const char* path = recomp::dbg::env_str("ROGUESQ_LS_REPLAY");
+        const size_t entry = (size_t)s.missions - 1;
+
+        if (entry >= playlist().size())
+        {
+            fprintf(stderr, "[ls] playlist: mission %d has no recording\n", s.missions);
+            rs64_menu_request_quit();
+
+            return;
+        }
+
+        const char* path = playlist()[entry].c_str();
         SessionHeader h;
 
-        if (!load_replay(path, &h, &s.frames, &s.song)) {
+        if (!load_replay(path, &h, &s.frames, &s.song.by_frame, &s.speech.by_frame)) {
             rs64_menu_request_quit();
 
             return;
@@ -296,8 +482,31 @@ extern "C" void rs64_ls_on_mission_init(uint8_t* rdram, recomp_context*)
             return;
         }
 
+        dump_game_heap(rdram, s.missions, h.level, -1);
+        fresh_start(rdram, entry > 0);
         apply_session(rdram, h);
+
+        // Widescreen and DRAW DISTANCE change the object culls; the first entry's were set at launch, before the level loads. A live recording's
+        // also change its gameplay, so it always takes the recorded ones.
+        if ((entry > 0 || h.live) && h.draw_pct != 0)
+        {
+            using rs64::video::Display;
+
+            if ((uint32_t)rs64::video::display_value(Display::Widescreen) != (h.widescreen ? 1u : 0u)) rs64::video::step_display(Display::Widescreen);
+
+            rs64::video::set_draw_distance((float)h.draw_pct / 100.0f);
+
+            fprintf(stderr, "[ls] replay display: widescreen=%u draw=%.2f (from the recording)\n", h.widescreen, h.draw_pct / 100.0);
+        }
+
+        if (!h.ship.empty() && !rs64_ships_fly(h.ship.c_str()))
+        {
+            fprintf(stderr, "[ls] the recording flew ship %s, which no enabled mod has: its template craft is shown\n", h.ship.c_str());
+        }
+
         s.god = h.flags0 & kGodModeBit;
+        s.hz = h.hz ? h.hz : 30u;
+        s.live = h.live != 0;
         memcpy(&s.cruise, &h.cruise_bits, 4);
         ww(rdram, 0x80003470u, h.seed);
         const char* out = recomp::dbg::env_str("ROGUESQ_LS_HASH_OUT");
@@ -322,15 +531,23 @@ extern "C" void rs64_ls_on_mission_init(uint8_t* rdram, recomp_context*)
 
             if (resume >= 0 && (size_t)resume <= s.frames.size()) {
                 s.frames.resize((size_t)resume);
-                s.song.erase(s.song.lower_bound((uint32_t)resume), s.song.end());
+                for (AudioAnswers* a : {&s.song, &s.speech}) {
+                    a->by_frame.erase(a->by_frame.lower_bound((uint32_t)resume), a->by_frame.end());
+                }
                 s.resume = true;
             }
         }
 
         s.hash_path = out ? std::string(out) : (rerec ? std::string(rerec) + ".hash" : std::string(path) + ".replay.hash");
+
+        // With a playlist, ROGUESQ_LS_HASH_OUT is a folder holding one <name>.replay.hash per recording.
+        if (out && playlist().size() > 1)
+        {
+            s.hash_path = (std::filesystem::path(out) / (std::filesystem::path(path).stem().string() + ".replay.hash")).string();
+        }
         s.hash = open_hash(s.hash_path);
 
-        fprintf(stderr, "[ls] replaying %zu frames, level %u craft %u seed %u%s\n", s.frames.size(), h.level, h.craft, h.seed, rerec ? " (re-recording)" : "");
+        fprintf(stderr, "[ls] replaying %zu frames, level %u craft %u seed %u at %u Hz%s\n", s.frames.size(), h.level, h.craft, h.seed, s.hz, rerec ? " (re-recording)" : "");
     }
 
     s.active = true;
@@ -368,7 +585,29 @@ extern "C" float rs64_ls_frame_dt(uint8_t* rdram, float dt) {
         s.flags0_at = -1;
     }
 
-    return 1.0f / 30.0f;
+    return s.hz > 30 ? dt : 1.0f / 30.0f;
+}
+
+// A high-rate session keeps real time while recording: each frame's final dt goes into its line, and a replay steps the same dts (1/hz for lines without one).
+extern "C" float rs64_ls_rate_dt(float dt)
+{
+
+    State& s = st();
+
+    if (!s.active || s.hz <= 30)
+    {
+        return dt;
+    }
+
+    if (s.mode == Mode::Replay && s.frame < s.frames.size()) {
+        const float rec = s.frames[s.frame].dt;
+
+        dt = rec > 0.0f ? rec : 1.0f / (float)s.hz;
+    }
+
+    s.dt = dt;
+
+    return dt;
 }
 
 // ROGUESQ_LS_PAUSE_AT=<f>[,<f>...]: a replay holds before frame f, writing <hash log>.paused, until <hash log>.resume appears (30 s cap), so
@@ -528,18 +767,46 @@ std::string rs64_clock_label()
         newest = std::max(newest, seen.second);
     }
 
+    // Clocks reached within a few frames of the newest pause point are the ones running now.
+    const auto running = [&](const char* name) {
+
+        const auto it = s_clock_seen.find(name);
+
+        return it != s_clock_seen.end() && newest - it->second.second <= milliseconds(100);
+    };
+
+    const auto part = [&](const std::string& name) { return name + "-" + std::to_string(s_clock_seen[name].first); };
+
     std::string label;
 
-    // Clocks reached within a few frames of the newest pause point are the ones running now.
-    for (const auto& [name, seen] : s_clock_seen) {
-        if (newest - seen.second > milliseconds(100)) {
-            continue;
-        }
-
-        label += (label.empty() ? "" : "_") + name + "-" + std::to_string(seen.first);
+    if (running("cutscene")) {
+        label = part("cutscene");
+    } else if (running("crawl")) {
+        label = part("crawl");
     }
 
-    return label;
+    // ingame counts the mission's frames, so it replaces the mission state; the state is left out under a cutscene or crawl.
+    if (running("ingame"))
+    {
+        return label + (label.empty() ? "" : "_") + part("ingame");
+    }
+
+    if (!label.empty())
+    {
+        return label;
+    }
+
+    std::string state;
+    steady_clock::time_point latest{};
+
+    for (const auto& [name, seen] : s_clock_seen) {
+        if (name != "nav" && seen.second >= latest) {
+            state = name;
+            latest = seen.second;
+        }
+    }
+
+    return state.empty() ? label : part(state);
 }
 
 extern "C" void rs64_pause_point(const char* clock, uint32_t frame)
@@ -629,152 +896,6 @@ extern "C" void rs64_cine_pause_point(uint8_t* rdram)
     rs64_pause_point("cutscene", rw(rdram, 0x800B0B28u));
 }
 
-// ROGUESQ_INPUT_RECORD=<file> records controller 0 from the first input poll after launch (menus included); ROGUESQ_INPUT_REPLAY=<file> plays it back from the same point.
-// Lines after the header: "<ms> <vi> <poll> <buttons hex> <x> <y>". v4 (written now) has one line per poll; replay serves the recorded sample nearest the current wall-clock ms (within half a poll). v3 (older) was written on change and replays by wall-clock ms with the stick blended between close samples.
-namespace {
-
-struct InputRec { uint32_t ms, vi, poll; uint16_t buttons; float x, y; };
-
-}
-
-bool rs64::ls::session_input(int controller_num, uint16_t* buttons, float* x, float* y, LiveInput live)
-{
-
-    static const char* s_rec_path = recomp::dbg::env_str("ROGUESQ_INPUT_RECORD");
-    static const char* s_play_path = recomp::dbg::env_str("ROGUESQ_INPUT_REPLAY");
-    static bool s_anchored = false;
-    static uint32_t s_poll = 0;
-    static unsigned s_vi0 = 0;
-    static std::chrono::steady_clock::time_point s_t0;
-
-    if ((controller_num == 0) && (s_rec_path || s_play_path)) {
-        if (!s_anchored)
-        {
-            s_anchored = true;
-            s_poll = 0;
-            s_vi0 = g_vi_tick;
-            s_t0 = std::chrono::steady_clock::now();
-
-            fprintf(stderr, "[input-rec] first poll: %s\n", s_play_path ? "replaying" : "recording");
-        }
-    }
-
-    const uint32_t vi = s_anchored ? (uint32_t)(g_vi_tick - s_vi0) : 0u;
-    const uint32_t ms = s_anchored ? (uint32_t)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - s_t0).count() : 0u;
-
-    if ((controller_num == 0) && s_play_path && s_anchored)
-    {
-        static std::vector<InputRec> s_recs;
-        static size_t s_idx = 0;
-        static bool s_loaded = false;
-        static int s_version = 0;
-
-        if (!s_loaded)
-        {
-            s_loaded = true;
-
-            if (FILE* f = fopen(s_play_path, "r"))
-            {
-                char header[32] = {};
-
-                if ((fscanf(f, "%31s v%d", header, &s_version) == 2) && (s_version >= 3))
-                {
-                    InputRec r{};
-                    unsigned b = 0;
-
-                    while (fscanf(f, "%u %u %u %x %f %f", &r.ms, &r.vi, &r.poll, &b, &r.x, &r.y) == 6)
-                    {
-                        r.buttons = (uint16_t)b;
-                        s_recs.push_back(r);
-                    }
-                }
-
-                fclose(f);
-            }
-
-            fprintf(stderr, "[input-rec] loaded %zu entries (v%d) from %s\n", s_recs.size(), s_version, s_play_path);
-        }
-
-        if ((s_version >= 4) && !s_recs.empty())
-        {
-            // Every poll was recorded with its time, so serve the recorded sample nearest to now: at most half a poll off, and no lag builds up when the game polls at a slightly different rate.
-            auto it = std::lower_bound(s_recs.begin() + (ptrdiff_t)s_idx, s_recs.end(), ms, [](const InputRec& r, uint32_t t) { return r.ms < t; });
-            size_t j = (it == s_recs.end()) ? (s_recs.size() - 1) : (size_t)(it - s_recs.begin());
-
-            if ((j > 0) && ((it == s_recs.end()) || ((s_recs[j].ms - ms) > (ms - s_recs[j - 1].ms))))
-            {
-                j--;
-            }
-
-            s_idx = std::max(s_idx, j);
-        }
-        else {
-            while ((s_idx + 1 < s_recs.size()) && (s_recs[s_idx + 1].ms <= ms)) {
-                s_idx++;
-            }
-        }
-
-        // Close the game once the recording has played out (the last entry is written when the recorded session ended).
-        static bool s_quit = false;
-
-        if (!s_quit && !s_recs.empty() && (ms > s_recs.back().ms + 500u))
-        {
-            s_quit = true;
-
-            fprintf(stderr, "[input-rec] replay finished at ms=%u, closing\n", ms);
-            rs64_menu_request_quit();
-        }
-
-        const bool have = !s_recs.empty() && ((s_version >= 4) || (s_recs[s_idx].ms <= ms));
-        *buttons = have ? s_recs[s_idx].buttons : 0;
-        *x = have ? s_recs[s_idx].x : 0.0f;
-        *y = have ? s_recs[s_idx].y : 0.0f;
-
-        // v3 only: blend the stick between samples of continuous motion (mouse steering) so a poll that lands a few ms off still reads nearly the recorded value; held values and sudden changes still step.
-        if (have && (s_version < 4) && (s_idx + 1 < s_recs.size())) {
-            const InputRec& a = s_recs[s_idx];
-            const InputRec& b = s_recs[s_idx + 1];
-
-            if ((b.ms > a.ms) && (b.ms - a.ms <= 50u)) {
-                const float t = (float)(ms - a.ms) / (float)(b.ms - a.ms);
-                *x = a.x + (b.x - a.x) * t;
-                *y = a.y + (b.y - a.y) * t;
-            }
-        }
-
-        // Drift check: our VI/poll counts at this time vs the recorded ones.
-        static uint32_t s_last_log = 0;
-
-        if (have && (ms >= s_last_log + 10000))
-        {
-            s_last_log = ms;
-
-            fprintf(stderr, "[input-rec] ms=%u vi=%u recorded_vi=%u poll=%u recorded_poll=%u\n", ms, vi, s_recs[s_idx].vi, s_poll, s_recs[s_idx].poll);
-        }
-
-        s_poll++;
-
-        return true;
-    }
-
-    const bool ok = live(controller_num, buttons, x, y);
-
-    if ((controller_num == 0) && s_rec_path && s_anchored)
-    {
-        static FILE* s_file = [](const char* p) { FILE* f = fopen(p, "w"); if (f) fprintf(f, "rs64-input v4\n"); return f; }(s_rec_path);
-
-        if (s_file)
-        {
-            fprintf(s_file, "%u %u %u %04X %.9g %.9g\n", ms, vi, s_poll, *buttons, *x, *y);
-            fflush(s_file);
-        }
-
-        s_poll++;
-    }
-
-    return ok;
-}
-
 extern "C" void rs64_ls_frame_pads(uint8_t* rdram, recomp_context*) {
 
     State& s = st();
@@ -784,8 +905,8 @@ extern "C" void rs64_ls_frame_pads(uint8_t* rdram, recomp_context*) {
         return;
     }
 
-    // The "ls" clock: frames since this session's mission started, which restarts with every chained mission (the state clock may not).
-    rs64_pause_point("ls", s.frame);
+    // The "ingame" clock: frames since this recording or replay's mission started (the recording's frame numbers), which restarts with every chained mission (the state clock may not).
+    rs64_pause_point("ingame", s.frame);
 
     if (s.mode == Mode::Replay) {
         ls_renderdoc_point(s);
@@ -820,6 +941,7 @@ extern "C" void rs64_ls_frame_pads(uint8_t* rdram, recomp_context*) {
         s.head = f.head;
         s.head_x = f.head_x;
         s.head_y = f.head_y;
+        f.dt = s.hz > 30 ? s.dt : 0.0f;
 
         if (s.rec) {
             fprintf(s.rec, "%s\n", format_frame(f).c_str());
@@ -827,7 +949,7 @@ extern "C" void rs64_ls_frame_pads(uint8_t* rdram, recomp_context*) {
         }
     } else if (s.mode == Mode::Replay) {
         if (s.frame >= s.frames.size()) {
-            end_session("replay finished");
+            end_session(rdram, "replay finished");
 
             return;
         }
@@ -835,7 +957,7 @@ extern "C" void rs64_ls_frame_pads(uint8_t* rdram, recomp_context*) {
         const FrameInput& f = s.frames[s.frame];
 
         if (f.frame != s.frame) {
-            end_session("recording frame numbers out of sequence");
+            end_session(rdram, "recording frame numbers out of sequence");
 
             return;
         }
@@ -880,16 +1002,35 @@ extern "C" void rs64_ls_frame_hash(uint8_t* rdram, recomp_context*)
         fflush(s.dump);
     }
 
+    static const long s_heap_at = recomp::dbg::env_int("ROGUESQ_LS_HEAP_DUMP_AT", -1);
+
+    if (s_heap_at >= 0 && (long)s.frame == s_heap_at)
+    {
+        dump_game_heap(rdram, s.missions, rb(rdram, 0x80130B40u), s_heap_at);
+    }
+
     s.frame++;
 
     // A recording that ends with the mission (success, fail) has no mission frame after its last one, so stop here.
     if (s.mode == Mode::Replay && !s.resume && s.frame >= s.frames.size()) {
-        end_session("replay finished");
+        end_session(rdram, "replay finished");
     }
 }
 
+// A stock-play session runs (a replay of an older recording): its mission must play the same whatever the display settings, so the gameplay
+// widenings stay off. A new recording and its replay play like normal play. Off again once it ends (ROGUESQ_LS_KEEP_RUNNING plays on live).
 extern "C" int rs64_ls_session(void) {
-    return mode() != Mode::Off;
+    return mode() != Mode::Off && st().active && !st().live;
+}
+
+// Any recording or replay runs, live or stock: the RT shadow view widening stays in the draw-only passes, out of the fields game logic reads.
+extern "C" int rs64_ls_any_session(void) {
+    return mode() != Mode::Off && st().active;
+}
+
+// The running session's logic rate, 0 when none runs.
+extern "C" int rs64_ls_hz(void) {
+    return rs64_ls_any_session() ? (int)st().hz : 0;
 }
 
 extern "C" int rs64_ls_replaying(void) {
@@ -937,8 +1078,10 @@ extern "C" float rs64_ls_cruise(float live) {
     return live;
 }
 
-// tickSongFadeTimer's isSongHandleActive answer comes from the audio thread, so it is recorded per frame and replayed like input.
-extern "C" uint32_t rs64_ls_song_active(uint8_t* rdram, uint32_t live) {
+namespace {
+// An audio-thread answer the sim branches on: recorded per query while recording, served back in order while replaying.
+uint32_t audio_answer(uint8_t* rdram, uint32_t live, AudioAnswers& a, char kind, int& warned)
+{
 
     State& s = st();
 
@@ -951,37 +1094,53 @@ extern "C" uint32_t rs64_ls_song_active(uint8_t* rdram, uint32_t live) {
 
     if (s.mode == Mode::Record || s.rerecord) {
         if (s.rec) {
-            fprintf(s.rec, "%s\n", format_song_event(frame, live != 0).c_str());
+            fprintf(s.rec, "%s\n", format_song_event(frame, live != 0, kind).c_str());
             fflush(s.rec);
         }
 
         return live;
     }
 
-    if (s.mode != Mode::Replay)
+    // A recording made before this answer was recorded has none of it: play it live, as those recordings always did.
+    if (s.mode != Mode::Replay || (kind == 'P' && a.by_frame.empty()))
     {
         return live;
     }
 
-    if (s.song_frame != frame) {
-        s.song_frame = frame;
-        s.song_idx = 0;
+    if (a.frame != frame) {
+        a.frame = frame;
+        a.idx = 0;
     }
 
-    const auto it = s.song.find(frame);
+    const auto it = a.by_frame.find(frame);
 
-    if (it == s.song.end() || s.song_idx >= it->second.size()) {
-        static int s_warned = 0;
-
-        if (s_warned++ < 5)
+    if (it == a.by_frame.end() || a.idx >= it->second.size()) {
+        if (warned++ < 5)
         {
-            fprintf(stderr, "[ls] song query on frame %u not in the recording; using the live answer\n", frame);
+            fprintf(stderr, "[ls] %s query on frame %u not in the recording; using the live answer\n", kind == 'P' ? "speech" : "song", frame);
         }
 
         return live;
     }
 
-    return it->second[s.song_idx++];
+    return it->second[a.idx++];
+}
+}
+
+// tickSongFadeTimer's isSongHandleActive answer comes from the audio thread, so it is recorded per frame and replayed like input.
+extern "C" uint32_t rs64_ls_song_active(uint8_t* rdram, uint32_t live) {
+
+    static int s_warned = 0;
+
+    return audio_answer(rdram, live, st().song, 'S', s_warned);
+}
+
+// The mission-end responders wait for speech to go idle (isSpeechBusyOrQueued, audio thread), so that answer is a sim input too.
+extern "C" uint32_t rs64_ls_speech_idle(uint8_t* rdram, uint32_t live) {
+
+    static int s_warned = 0;
+
+    return audio_answer(rdram, live, st().speech, 'P', s_warned);
 }
 
 // ROGUESQ_RELOC_GUARD=1: poison the moved per-player ranges at their old addresses and report any write there.

@@ -193,7 +193,27 @@ float throttle_position(const Bindings& b, const RawState& st) {
         }
     }
 
-    return -1.0f;
+    // No throttle lever: pad axes bound to A (boost) and Z (brake) push the lever from cruise by how far they are pulled.
+    auto pull = [&](Target t) {
+
+        float m = 0.0f;
+
+        for (const Source& s : b.targets[(int)t])
+        {
+            if (s.kind == SourceKind::PadAxis) m = std::max(m, source_value(s, st, b));
+        }
+
+        return m;
+    };
+
+    const float boost = pull(Target::A);
+    const float brake = pull(Target::Z);
+
+    if (boost <= 0.0f && brake <= 0.0f) return -1.0f;
+
+    const float c = std::clamp(b.throttle_cruise, 0.05f, 0.95f);
+
+    return std::clamp(c + boost * (1.0f - c) - brake * c, 0.0f, 1.0f);
 }
 
 float throttle_speed(float p, float cruise_at, float min_speed, float cruise_speed, float max_speed)
@@ -379,7 +399,6 @@ Bindings default_bindings()
     add(Target::CDown,  vb(VrStickClickR));
     add(Target::Z,      vb(VrTriggerL));
     add(Target::A,      vb(VrTriggerR));
-    add(Target::RTrig,  Source{ SourceKind::VrButton, VrGripR, 0, -1, Held{ SourceKind::VrButton, VrGripL, 0, -1 } });
     add(Target::StickRight, vax(0, +1));
     add(Target::StickLeft,  vax(0, -1));
     add(Target::StickUp,    vax(1, +1));
@@ -705,7 +724,7 @@ bool input_from_json(const json& o, Source& s)
     std::string name = o["name"].get<std::string>();
 
     if (kind == "joybutton" || kind == "joyaxis" || kind == "joyhat") {
-        int dev = o.value("device", -1);
+        int dev = rs64::settings::value_or(o, "device", -1);
 
         if (dev < 0 || dev > 126) return false;
 
@@ -718,7 +737,7 @@ bool input_from_json(const json& o, Source& s)
             s = { SourceKind::JoyButton, i, 0, (int8_t)dev };
         } else if (kind == "joyaxis") {
             int i = indexed_name(name, "axis");
-            int d = o.value("dir", 0);
+            int d = rs64::settings::value_or(o, "dir", 0);
 
             if (i < 0 || (d != 1 && d != -1)) return false;
 
@@ -735,7 +754,7 @@ bool input_from_json(const json& o, Source& s)
         return true;
     }
 
-    int dir = o.value("dir", 0);
+    int dir = rs64::settings::value_or(o, "dir", 0);
 
     if (kind == "key")
     {
@@ -1150,6 +1169,81 @@ Bindings default_device_bindings(const Bindings& cur, Device d)
     return out;
 }
 
+template <class B, class F>
+void mouse_fields(B& b, F&& f)
+{
+
+    f("sensitivity", b.mouse_sensitivity);
+    f("smoothing", b.mouse_smoothing);
+    f("curve", b.mouse_curve);
+    f("invert_x", b.mouse_invert_x);
+    f("invert_y", b.mouse_invert_y);
+}
+
+template <class B, class F>
+void top_fields(B& b, F&& f)
+{
+
+    f("keyboard_enabled", b.keyboard_enabled);
+    f("joystick_enabled", b.joystick_enabled);
+    f("stick_range", b.stick_range);
+    f("pad_deadzone", b.pad_deadzone);
+    f("throttle_cruise", b.throttle_cruise);
+    f("trigger_resistance", b.trigger_resistance);
+}
+
+template <class C, class F>
+void rumble_fields(C& c, F&& f)
+{
+
+    f("enabled", c.enabled);
+    f("strength", c.strength);
+    f("scale_hits_by_damage", c.scale_hits_by_damage);
+    f("sustain_death_spiral", c.sustain_death_spiral);
+}
+
+template <class C, class F>
+void rumble_effect_fields(C& c, F&& f)
+{
+
+    f("hit", c.hit);
+    f("collision", c.collision);
+    f("object_collision", c.object_collision);
+    f("terrain_scrape", c.terrain_scrape);
+    f("weapons", c.weapons);
+    f("death_spiral", c.death_spiral);
+    f("crash", c.crash);
+}
+
+template <class C, class F>
+void lightbar_fields(C& c, F&& f)
+{
+
+    f("enabled", c.enabled);
+    f("health", c.health);
+    f("hit_flash", c.hit_flash);
+}
+
+const char* hotkey_name(Hotkey h)
+{
+
+    static constexpr const char* kNames[(int)Hotkey::Count] = { "inspector", "ray_tracing", "view_rdram", "texture_packs", "profiler", "controls", "fps", "vr_look", "rt_debug_view", "pause", "step", "dump" };
+
+    return kNames[(int)h];
+}
+
+Hotkey hotkey_at(const HotkeyConfig& c, int sc)
+{
+
+    for (int h = 0; c.enabled && sc != SDL_SCANCODE_UNKNOWN && h < (int)Hotkey::Count; ++h) {
+        if (!c.keys[h].empty() && SDL_GetScancodeFromName(c.keys[h].c_str()) == sc) {
+            return (Hotkey)h;
+        }
+    }
+
+    return Hotkey::Count;
+}
+
 // In the working directory with saves and mods: the exe's folder can be read-only (AppImage, Flatpak).
 std::string default_config_path() {
     return "roguesq_input.json";
@@ -1162,50 +1256,40 @@ bool load_bindings(Bindings& b, const std::string& path) {
     if (!f.is_open()) return false;
 
     json j;
-    try { f >> j; } catch (...) { return false; }
 
-    if (j.contains("mouse") && j["mouse"].is_object()) {
-        const json& m = j["mouse"];
-        b.mouse_sensitivity = m.value("sensitivity", b.mouse_sensitivity);
-        b.mouse_smoothing   = m.value("smoothing", b.mouse_smoothing);
-        b.mouse_curve       = m.value("curve", b.mouse_curve);
-        b.mouse_invert_x    = m.value("invert_x", b.mouse_invert_x);
-        b.mouse_invert_y    = m.value("invert_y", b.mouse_invert_y);
+    if (!rs64::settings::parse_file(f, path, j) || !j.is_object())
+    {
+        return false;
     }
 
-    b.keyboard_enabled = j.value("keyboard_enabled", b.keyboard_enabled);
-    b.joystick_enabled = j.value("joystick_enabled", b.joystick_enabled);
-    b.stick_range      = j.value("stick_range", b.stick_range);
-    b.pad_deadzone     = j.value("pad_deadzone", b.pad_deadzone);
-    b.throttle_cruise  = j.value("throttle_cruise", b.throttle_cruise);
+    using rs64::settings::reader;
+    using rs64::settings::value_or;
+
+    if (j.contains("mouse") && j["mouse"].is_object())
+    {
+        mouse_fields(b, reader(j["mouse"], path));
+    }
+
+    top_fields(b, reader(j, path));
+    b.trigger_resistance = std::clamp(b.trigger_resistance, 0.0f, 1.0f);
 
     if (j.contains("rumble") && j["rumble"].is_object())
     {
         const json& r = j["rumble"];
-        RumbleConfig& c = b.rumble;
-        c.enabled              = r.value("enabled", c.enabled);
-        c.strength             = r.value("strength", c.strength);
-        c.scale_hits_by_damage = r.value("scale_hits_by_damage", c.scale_hits_by_damage);
-        c.sustain_death_spiral = r.value("sustain_death_spiral", c.sustain_death_spiral);
 
-        if (r.contains("effects") && r["effects"].is_object()) {
-            const json& e = r["effects"];
-            c.hit              = e.value("hit", c.hit);
-            c.collision        = e.value("collision", c.collision);
-            c.object_collision = e.value("object_collision", c.object_collision);
-            c.terrain_scrape   = e.value("terrain_scrape", c.terrain_scrape);
-            c.weapons          = e.value("weapons", c.weapons);
-            c.death_spiral     = e.value("death_spiral", c.death_spiral);
-            c.crash            = e.value("crash", c.crash);
+        rumble_fields(b.rumble, reader(r, path));
+
+        if (r.contains("effects") && r["effects"].is_object())
+        {
+            rumble_effect_fields(b.rumble, reader(r["effects"], path));
         }
     }
 
     if (j.contains("lightbar") && j["lightbar"].is_object()) {
         const json& l = j["lightbar"];
         LightbarConfig& c = b.lightbar;
-        c.enabled   = l.value("enabled", c.enabled);
-        c.health    = l.value("health", c.health);
-        c.hit_flash = l.value("hit_flash", c.hit_flash);
+
+        lightbar_fields(c, reader(l, path));
 
         if (l.contains("colors") && l["colors"].is_object()) {
             const json& k = l["colors"];
@@ -1214,6 +1298,16 @@ bool load_bindings(Bindings& b, const std::string& path) {
             {
                 if (k.contains(name) && k[name].is_string()) *field = parse_hex_color(k[name].get<std::string>(), *field);
             }
+        }
+    }
+
+    if (j.contains("hotkeys") && j["hotkeys"].is_object()) {
+        const json& h = j["hotkeys"];
+
+        b.hotkeys.enabled = value_or(h, "enabled", b.hotkeys.enabled);
+
+        for (int k = 0; k < (int)Hotkey::Count; ++k) {
+            b.hotkeys.keys[k] = value_or(h, hotkey_name((Hotkey)k), b.hotkeys.keys[k]);
         }
     }
 
@@ -1226,10 +1320,10 @@ bool load_bindings(Bindings& b, const std::string& path) {
 
             JoyDevice jd;
             jd.guid        = d["guid"].get<std::string>();
-            jd.ordinal     = d.value("ordinal", 0);
-            jd.name        = d.value("name", std::string());
-            jd.invert_axes = d.value("invert_axes", 0u);
-            jd.deadzone    = d.value("deadzone", jd.deadzone);
+            jd.ordinal     = value_or(d, "ordinal", 0);
+            jd.name        = value_or(d, "name", std::string());
+            jd.invert_axes = value_or(d, "invert_axes", 0u);
+            jd.deadzone    = value_or(d, "deadzone", jd.deadzone);
             b.joy_devices.push_back(jd);
         }
     }
@@ -1259,21 +1353,21 @@ bool load_bindings(Bindings& b, const std::string& path) {
 bool save_bindings(const Bindings& b, const std::string& path)
 {
 
-    json j;
-    j["mouse"] = { {"sensitivity", b.mouse_sensitivity},
-                   {"smoothing", b.mouse_smoothing}, {"curve", b.mouse_curve},
-                   {"invert_x", b.mouse_invert_x}, {"invert_y", b.mouse_invert_y} };
-    j["keyboard_enabled"] = b.keyboard_enabled;
-    j["joystick_enabled"] = b.joystick_enabled;
-    j["stick_range"] = b.stick_range;
-    j["pad_deadzone"] = b.pad_deadzone;
-    j["throttle_cruise"] = b.throttle_cruise;
-    const RumbleConfig& c = b.rumble;
-    j["rumble"] = { {"enabled", c.enabled}, {"strength", c.strength},
-                    {"scale_hits_by_damage", c.scale_hits_by_damage}, {"sustain_death_spiral", c.sustain_death_spiral},
-                    {"effects", { {"hit", c.hit}, {"collision", c.collision}, {"object_collision", c.object_collision},
-                                  {"terrain_scrape", c.terrain_scrape}, {"weapons", c.weapons},
-                                  {"death_spiral", c.death_spiral}, {"crash", c.crash} }} };
+    using rs64::settings::writer;
+
+    json j = json::object();
+    json mouse = json::object();
+    json rumble = json::object();
+    json effects = json::object();
+
+    mouse_fields(b, writer(mouse));
+    top_fields(b, writer(j));
+    rumble_fields(b.rumble, writer(rumble));
+    rumble_effect_fields(b.rumble, writer(effects));
+    rumble["effects"] = effects;
+    j["mouse"] = mouse;
+    j["rumble"] = rumble;
+
     LightbarConfig lb = b.lightbar;
     json colors = json::object();
 
@@ -1283,7 +1377,19 @@ bool save_bindings(const Bindings& b, const std::string& path)
         colors[name] = hex;
     }
 
-    j["lightbar"] = { {"enabled", lb.enabled}, {"health", lb.health}, {"hit_flash", lb.hit_flash}, {"colors", colors} };
+    json lightbar = json::object();
+
+    lightbar_fields(lb, writer(lightbar));
+    lightbar["colors"] = colors;
+    j["lightbar"] = lightbar;
+
+    json hotkeys = { { "enabled", b.hotkeys.enabled } };
+
+    for (int k = 0; k < (int)Hotkey::Count; ++k) {
+        hotkeys[hotkey_name((Hotkey)k)] = b.hotkeys.keys[k];
+    }
+
+    j["hotkeys"] = hotkeys;
     json joys = json::array();
 
     for (const JoyDevice& d : b.joy_devices)

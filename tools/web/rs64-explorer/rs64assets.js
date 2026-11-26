@@ -48,6 +48,24 @@ function rs64Lib()
     return new Uint8Array(await new Response(stream).arrayBuffer());
   }
 
+  // The hidden Naboo Starfighter's textures are encrypted (decrypt_ns_hmt, key = CRC32 of !YNGWIE!): XOR with a key that rotates right
+  // a byte and adds each cipher byte. Reads see the plain file, and a mod's patch is of the plain file (the game re-encrypts it).
+  const NABOO_HMT = 'data/pl_crafts/koelsch_HMT';
+
+  function nabooDecrypt(src)
+  {
+    const out = new Uint8Array(src.length);
+    let key = 0x050FE09C;
+
+    for (let i = 0; i < src.length; i++)
+    {
+      out[i] = src[i] ^ (key & 0xFF);
+      key = ((((key >>> 8) | ((key & 0xFF) << 24)) >>> 0) + src[i]) >>> 0;
+    }
+
+    return out;
+  }
+
   // Returns { assets: Map(path -> entry), read(path) -> Promise<DataView> }.
   function openRom(buf)
   {
@@ -123,21 +141,8 @@ function rs64Lib()
 
       let raw = a.csize ? await inflate(rom.subarray(a.offset, a.offset + a.csize)) : rom.slice(a.offset, a.offset + a.size);
 
-      // The hidden Naboo Starfighter's textures are encrypted (docs/cheat_codes/ns_hmt_decode.c): rolling XOR, key 0x050FE09C.
-      if (path.endsWith('/koelsch_HMT')) {
-        let key = 0x050FE09C;
-
-        for (let i = 0; i < raw.length; i++)
-        {
-          const c = raw[i];
-
-          raw[i] = c ^ (key & 0xFF);
-          key = ((((key >>> 8) | ((key & 0xFF) << 24)) >>> 0) + c) >>> 0;
-        }
-
-        if (raw[0] === 0x78)
-          raw = await inflate(raw);
-      }
+      if (path === NABOO_HMT)
+        raw = nabooDecrypt(raw);
 
       const view = viewOf(raw);
 
@@ -258,6 +263,23 @@ function rs64Lib()
       ...(Array.isArray(doc.conditions) ? doc.conditions : []).filter((e) => e?.check).map((e) => entry('condition', e.check, e))
     ];
   }
+
+  // The game's own craft actions and special-button events (hangar_ships.cpp), in the rules_ext.json form: a ship's rules use them, and
+  // a level's can too.
+  const CRAFT_RULE_EXT = rulesExtParse(JSON.stringify({
+    actions: [
+      { do: 'craft.speed', label: 'Craft speed (times)', params: [{ key: 'times', picker: 'number' }] },
+      { do: 'craft.guns', label: 'Craft guns on (1) or off (0)', params: [{ key: 'on', picker: 'number' }] },
+      { do: 'craft.animation', label: 'Craft special animation at (0-1, -1 = the special\'s own)', params: [{ key: 'at', picker: 'number' }] },
+      { do: 'craft.ready', label: 'End the special and its cooldown' },
+    ],
+    events: [
+      { custom: 'special_engaged', label: 'The special button engages' },
+      { custom: 'special_released', label: 'The special releases' },
+      { custom: 'special_ready', label: 'The special is ready again' },
+      { custom: 'fire_locked', label: 'Fire pressed with the guns locked' },
+    ],
+  }), 'game');
 
   // What an installed mod offers other menu mods: the setting keys and conditions its roguesq_menu.json uses, and its mod.json config options
   // as config:<mod id>:<option id> conditions. Its own @exports and config:<option id> keys only work inside that mod, so they are left out.
@@ -1242,12 +1264,15 @@ function rs64Lib()
 
   const MOD_KIND_RULES = [
     [/^explorer\//, null],
-    [/^mod\/roguesq_lights\.json$/, 'models'],
+    [/^mod\/(roguesq_lights|ships)\.json$|^mod\/assets\/pl_crafts\//, 'models'],
     [/^mod\/lang\//, 'fonts'],
     [/^mod\/(roguesq_menu|menu_text)\.json$/, 'ui'],
     [/^mod\/(levels\.json|camera_shots\.txt|assets\/(level|crawl)\/)/, 'levels'],
     [/^data\/fonts\//, 'fonts'],
     [/^data\/(level|cuts|backdrop|frontend\/starwars)\/|^data\/medal_info$/, 'levels'],
+    [/^data\/frontend\/hangar\//, 'models'],
+    // A craft's HUD health icon (not the weapon, lock-on, radar or font images).
+    [/^data\/ov\/(ov|1v)_(?!2_|font$|lock|mtarget$|mtrack$|player_id$|rdir$|target$|track$|wb$|wp$|bomb$)/, 'models'],
     [/^data\/(ov|frontend)\//, 'ui'],
     [/^data\/(reb_stuff|blueprints)\//, 'models'],
     [/^data\/(sound\/|speech|voice_TXT)/, 'audio'],
@@ -1522,10 +1547,10 @@ function rs64Lib()
   }));
 
   const NATIVE_MENUS = {
-    main_menu: { title: { en: '' }, max: 8, align: 'left', entries: nativeRows([['start', 'START', 0, -165], ['options', 'OPTIONS', 0, -165]]) },
+    main_menu: { title: { en: '' }, max: 12, align: 'left', entries: nativeRows([['start', 'START', 0, -165], ['options', 'OPTIONS', 0, -165]]) },
     options: {
       title: { en: 'OPTIONS' },
-      max: 8,
+      max: 12,
       entries: nativeRows([
         ['biographies', 'BIOGRAPHIES'],
         ['elite_rogues', 'ELITE ROGUES'],
@@ -1539,7 +1564,7 @@ function rs64Lib()
     },
     game_settings: {
       title: { en: 'GAME SETTINGS' },
-      max: 8,
+      max: 12,
       entries: nativeRows([
         ['auto_roll', 'AUTO ROLL: ON'],
         ['auto_level', 'AUTO LEVEL: ON'],
@@ -1553,9 +1578,9 @@ function rs64Lib()
     },
     sound_settings: {
       title: { en: 'SOUND SETTINGS' },
-      max: 8,
+      max: 12,
       limit: 'slider',
-      note: 'Only sliders can go here, each in place of one of the game\'s entries (the menu is full): click an entry and use Replace with a slider.',
+      note: 'Only sliders can go here, each in place of one of the game\'s entries: click an entry and use Replace with a slider.',
       entries: nativeRows([
         ['music', 'MUSIC'],
         ['sound_fx', 'SOUND FX'],
@@ -1569,7 +1594,7 @@ function rs64Lib()
     // The game's screen is a controller diagram (title = the preset) with only BACK, which carries y 283 to sit under it (no extra BACK gap); list base -90.
     controller_settings: {
       title: { en: 'LUKE\'S SETTINGS' },
-      max: 8,
+      max: 12,
       backGap: 0,
       note: 'The game draws a controller diagram over this screen, so new buttons need a Y offset to sit clear of its labels. The controls-menu mod replaces this screen while it is enabled.',
       entries: nativeRows([['back', 'BACK', 283]])
@@ -1755,6 +1780,308 @@ function rs64Lib()
     return keys.size ? out : [];
   }
 
+  // ---- Custom ships: a mod's ships.json (new hangar ships that fly as a stock template craft, see src/game/mod_content/mod_ships.h) ----
+  // Per template craft: its hangar scene record, its bay's camera points (camstart_<n> / camwatch_<n>), its exterior model, where its
+  // stop sits on the camera's route (u, the menu overlay's 0x800CC414 entry), its cockpit model (pl_crafts/) and its HUD icon (ov/ov_
+  // and ov/1v_). The TIE (its own reveal, its model under imp_stuff/) and the T-16 (no hangar bay) aren't templates.
+  const SHIP_TEMPLATES = {
+    xwing: { record: 'xwing', cam: 1, model: 'data/pl_crafts/xwing', u: 0.828, cockpit: 'c_xwg', hud: 'xwing', blueprint: 'xwing' },
+    ywing: { record: 'ywing', cam: 3, model: 'data/pl_crafts/ywing', u: 0.1377, cockpit: 'c_ywg', hud: 'ywing', blueprint: 'ywing' },
+    awing: { record: 'awing', cam: 2, model: 'data/pl_crafts/awing', u: 0.696, cockpit: 'c_awg', hud: 'awing', blueprint: 'awing' },
+    vwing: { record: 'vwing', cam: 4, model: 'data/pl_crafts/vwing', u: 0.9953, cockpit: 'c_vwg', hud: 'vwing', blueprint: 'vwing' },
+    speeder: { record: 'snowspeeder', cam: 0, model: 'data/pl_crafts/snowspeeder', u: 0.5486, cockpit: 'c_spdr', hud: 'spdr', blueprint: 'speeder' },
+    falcon: { record: 'falcon', cam: 5, model: 'data/pl_crafts/falcon', u: 0.3001, cockpit: 'c_fal', hud: 'falcon', blueprint: 'falcon' },
+    naboo: { record: 'koelsch', cam: 7, model: 'data/pl_crafts/koelsch', u: 0.8968, cockpit: 'c_kolsch', hud: 'koelsch', blueprint: 'xwing' },
+  };
+
+  // Free hangar floor (x, z) between the stock bays, by the route the camera looks along (camroute_1), with the stop that frames it:
+  // [u on camroute_0 where the camera stands, v on camroute_1 where it looks]. Ships past these three get a free spot of their own.
+  const SHIP_SPOTS = [
+    { pos: [-15.2, 12.2], stop: [0.8625, 0.847] },
+    { pos: [-22.93, -14.81], stop: [0.0856, 0.0856] },
+    { pos: [18.58, 8.98], stop: [0.5969, 0.5969] },
+  ];
+
+  const SHIP_ID_MAX = 9;
+
+  function shipsParse(text) {
+    try {
+      const doc = JSON.parse(text || '{}');
+
+      return Array.isArray(doc.ships) ? doc.ships : [];
+    } catch {
+      return [];
+    }
+  }
+
+  const shipsWrite = (ships) => JSON.stringify({ ships }, null, 1) + '\n';
+
+  // A ship's craft behaviours (the craft each comes from): its own "behaviours" list, else its template's.
+  const SHIP_BEHAVIOURS = { sfoils: 'xwing', boost: 'vwing', aim: 'awing' };
+  const shipBehaviours = (ship) => (Array.isArray(ship.behaviours) ? ship.behaviours : Object.keys(SHIP_BEHAVIOURS).filter((b) => SHIP_BEHAVIOURS[b] === ship.template));
+
+  // The game's limit: the hangar's object array has room for eight ships.
+  const SHIP_MAX = 8;
+
+  // Where a ship stands: its own pos, else the fixed spot its stop is.
+  const shipPos = (ship) => ship.pos ?? SHIP_SPOTS.find((s) => s.stop[0] === ship.stop[0] && s.stop[1] === ship.stop[1])?.pos ?? null;
+
+  // A free spot once the fixed ones are taken: the point on the route the camera looks along (camroute_1) farthest from every hangar
+  // record (craft, props) and every ship. The Falcon's hull reaches about 12 units past its record.
+  function shipFreeSpot(dat, ships)
+  {
+    const dv = dat instanceof DataView ? dat : viewOf(dat);
+    const items = parseDAT(dv).items;
+    const look = splineAt(dv, items.find((i) => i.name === 'camroute_1'));
+    const camera = (n) => /^camroute_|_route$|_camstart$|_camwatch$/.test(n);
+    const reach = { falcon: 12 };
+    const records = items.filter((i) => i.pos && !camera(i.name)).map((i) => [i.pos[0], i.pos[2], reach[i.name] ?? 0]);
+    const taken = [...records, ...ships.map(shipPos).filter(Boolean).map((p) => [...p, 0])];
+    let best = null;
+    let room = -1;
+
+    for (let k = 0; k < 400; k++)
+    {
+      const p = look(k / 400);
+      const here = Math.min(...taken.map((t) => Math.hypot(t[0] - p[0], t[1] - p[2]) - t[2]));
+
+      if (here > room)
+        [best, room] = [[p[0], p[2]], here];
+    }
+
+    return shipSpotAt(dv, best);
+  }
+
+  // A new ship from a template craft: an id from the name (unique, at most 9 of a-z 0-9 _, not a stock model's, never ending in a digit,
+  // which the game splits off a model path) and the next free fixed spot, or with the hangar scene (dat) a free spot of its own.
+  // Null when the hangar is full.
+  function shipNew(ships, name, template, taken = [], dat = null)
+  {
+    const fixed = SHIP_SPOTS.find((s) => !ships.some((x) => x.stop[0] === s.stop[0] && x.stop[1] === s.stop[1]));
+    const spot = ships.length >= SHIP_MAX ? null : (fixed ?? (dat ? shipFreeSpot(dat, ships) : null));
+
+    if (!spot)
+      return null;
+
+    const cut = (s, n) => s.slice(0, n).replace(/_+$/, '');
+    const base = cut(cut(name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, ''), SHIP_ID_MAX).replace(/[0-9_]+$/, ''), SHIP_ID_MAX) || 'ship';
+    let id = base;
+
+    for (let k = 1; (ships.some((s) => s.id === id) || taken.includes(id)) && k < 26; k++)
+      id = `${cut(base, SHIP_ID_MAX - 2)}_${'abcdefghijklmnopqrstuvwxyz'[k]}`;
+
+    return { id, name: name.toUpperCase(), template, stop: [...spot.stop], ...(fixed ? {} : { pos: [...spot.pos] }) };
+  }
+
+  // [new path, template path]: the ship's own exterior and cockpit models and HUD icons, copies of its template's (the game uses a
+  // ship's file under these names in place of its template's).
+  function shipAliases(ship)
+  {
+    const t = SHIP_TEMPLATES[ship.template];
+
+    return [
+      ...['_HOB', '_HMT'].map((ext) => [`data/pl_crafts/${ship.id}${ext}`, t.model + ext]),
+      ...['_HOB', '_HMT'].map((ext) => [`data/pl_crafts/c_${ship.id}${ext}`, `data/pl_crafts/${t.cockpit}${ext}`]),
+      ...['ov', '1v'].map((size) => [`data/ov/${size}_${ship.id}`, `data/ov/${size}_${t.hud}`]),
+      [`data/blueprints/${ship.id}`, `data/blueprints/${t.blueprint}`],
+      // The ship's shadow: the game reads the first image of this copy of the shadow set.
+      [`data/pl_crafts/s_${ship.id}`, 'data/pl_crafts/shadows_TM'],
+    ];
+  }
+
+  // A single-texture file (HUD icon, blueprint) whose texture is named tag + its old name, cut to the old length: the game shares a loaded
+  // texture by name, so a ship's copy would show its template's pixels.
+  function texFileRename(bytes, tag)
+  {
+    const out = (bytes instanceof DataView ? bytesOf(bytes) : bytes).slice();
+    const dv = viewOf(out);
+    const at = 4 + dv.getUint32(4 + 0x24);
+    const name = cstr(dv, at, 32);
+    const next = (tag + name).slice(0, name.length);
+
+    out.set(new TextEncoder().encode(next), at);
+
+    return out;
+  }
+
+  // A blueprint file (blueprints/*, the AVAILABLE CRAFT hologram, 64x80) with its pixels from RGBA: 4-bit intensity, two pixels a byte,
+  // high nibble first, which the game draws tinted green. Same file layout as a HUD icon.
+  function blueprintWrite(bytes, rgba)
+  {
+    const out = (bytes instanceof DataView ? bytesOf(bytes) : bytes).slice();
+    const dv = viewOf(out);
+    const { w, h } = hudIconSize(out);
+    const px = 4 + dv.getUint32(4);
+    const lum = (i) => (rgba[i * 4] * 0.3 + rgba[i * 4 + 1] * 0.59 + rgba[i * 4 + 2] * 0.11) * (rgba[i * 4 + 3] / 255);
+
+    for (let i = 0; i < w * h; i += 2)
+      out[px + (i >> 1)] = ((lum(i) >> 4) << 4) | (lum(i + 1) >> 4);
+
+    return out;
+  }
+
+  // A HUD icon file (ov/ov_* 32x32, ov/1v_* 52x64): a size word, then one texture header (+0 pixel offset, +0x28 width, +0x2A height)
+  // and IA8 pixels, 4-bit intensity over 4-bit alpha, rows in order.
+  function hudIconSize(bytes)
+  {
+    const dv = viewOf(bytes instanceof DataView ? bytesOf(bytes) : bytes);
+
+    return { w: dv.getUint16(4 + 0x28), h: dv.getUint16(4 + 0x2A) };
+  }
+
+  // The icon with its pixels from RGBA (w * h * 4, the icon's size): intensity from the colour's brightness, alpha from its alpha.
+  function hudIconWrite(bytes, rgba)
+  {
+    const out = (bytes instanceof DataView ? bytesOf(bytes) : bytes).slice();
+    const dv = viewOf(out);
+    const { w, h } = hudIconSize(out);
+    const px = 4 + dv.getUint32(4);
+
+    for (let i = 0; i < w * h; i++)
+    {
+      const lum = (rgba[i * 4] * 0.3 + rgba[i * 4 + 1] * 0.59 + rgba[i * 4 + 2] * 0.11) | 0;
+
+      out[px + i] = ((lum >> 4) << 4) | (rgba[i * 4 + 3] >> 4);
+    }
+
+    return out;
+  }
+
+  // A HOB whose (first) object is named name: the hangar finds a ship's model by its id.
+  function hobSetObjectName(hob, name)
+  {
+    const out = (hob instanceof DataView ? bytesOf(hob) : hob).slice();
+
+    out.fill(0, 8, 24);
+    [...name].forEach((c, i) => (out[8 + i] = c.charCodeAt(0)));
+
+    return out;
+  }
+
+  // Where a ship of a template stands for a spot: on the camera's line from its stop to the spot, as far from the camera as the template
+  // stands from its own stop, at the template's height.
+  function shipStandAt(dat, template, spot)
+  {
+    const dv = dat instanceof DataView ? dat : viewOf(dat);
+    const items = parseDAT(dv).items;
+    const t = SHIP_TEMPLATES[template];
+    const at = items.find((i) => i.name === t.record).pos;
+    const cam = splineAt(dv, items.find((i) => i.name === 'camroute_0'));
+    const eye = cam(spot.stop[0]);
+    const far = Math.hypot(at[0] - cam(t.u)[0], at[2] - cam(t.u)[2]);
+    const line = [spot.pos[0] - eye[0], spot.pos[1] - eye[2]];
+    const len = Math.hypot(...line) || 1;
+
+    return [eye[0] + (line[0] / len) * far, at[1], eye[2] + (line[1] / len) * far];
+  }
+
+  // A spot at pos ([x, z] on the hangar floor): the camera stops where its routes come nearest, camroute_0 where it stands and camroute_1
+  // where it looks.
+  function shipSpotAt(dat, pos)
+  {
+    const dv = dat instanceof DataView ? dat : viewOf(dat);
+    const items = parseDAT(dv).items;
+
+    const nearest = (name) => {
+      const at = splineAt(dv, items.find((i) => i.name === name));
+      let best = 0;
+      let dist = Infinity;
+
+      for (let k = 0; k < 1000; k++) {
+        const p = at(k / 1000);
+        const d = Math.hypot(p[0] - pos[0], p[2] - pos[1]);
+
+        if (d < dist)
+          [best, dist] = [k / 1000, d];
+      }
+
+      return best;
+    };
+
+    return { pos: [...pos], stop: [nearest('camroute_0'), nearest('camroute_1')] };
+  }
+
+  // The hangar scene without a ship's records (its own, its route and its camera points).
+  function shipHangarRemove(dat, id)
+  {
+    let out = (dat instanceof DataView ? bytesOf(dat) : dat).slice();
+
+    for (const name of [id, `${id}_route`, `${id}_camstart`, `${id}_camwatch`])
+    {
+      const item = parseDAT(viewOf(out)).items.find((i) => i.name === name);
+
+      if (item)
+        out = datRemoveItem(out, item.type, item.index);
+    }
+
+    return out;
+  }
+
+  // The hangar scene (frontend/hangar/dat) with the ship's records: a copy of its template's ship record at the ship's spot, and copies of
+  // the template's take-off route and bay camera points carried with it. All of them turn about the ship by the change in the camera's
+  // view of it, so the ship shows the camera the side its template does (the yaw is rot +0x20; a (180, y, 180) rotation turns as 180 - y).
+  function shipHangarAdd(dat, ship, spot = (shipPos(ship) && { pos: shipPos(ship), stop: ship.stop }) ?? SHIP_SPOTS[0])
+  {
+    const t = SHIP_TEMPLATES[ship.template];
+    let out = (dat instanceof DataView ? bytesOf(dat) : dat).slice();
+    const items0 = parseDAT(viewOf(out)).items;
+    const at = items0.find((i) => i.name === t.record).pos;
+    const cam = splineAt(viewOf(out), items0.find((i) => i.name === 'camroute_0'));
+    const to = shipStandAt(out, ship.template, spot);
+
+    const view = (p, u) => {
+      const c = cam(u);
+
+      return Math.atan2(p[0] - c[0], p[2] - c[2]);
+    };
+
+    const turn = view(to, ship.stop[0]) - view(at, t.u);
+    const [s, c] = [Math.sin(turn), Math.cos(turn)];
+
+    const carry = (p) => {
+      const dx = p[0] - at[0];
+      const dz = p[2] - at[2];
+
+      return [to[0] + dx * c + dz * s, p[1], to[2] + dz * c - dx * s];
+    };
+
+    const add = (name, newName, pos, change = null) => {
+      const items = parseDAT(viewOf(out)).items;
+      const src = items.find((i) => i.name === name);
+      const rec = out.slice(src.offset, src.offset + viewOf(out).getUint32(src.offset + 8));
+      const rv = viewOf(rec);
+
+      pos.forEach((v, a) => rv.setFloat32(0x10 + a * 4, v));
+      change?.(rv);
+      out = datAddItem(out, src.type, rec);
+
+      const added = parseDAT(viewOf(out)).items.filter((i) => i.type === src.type).reduce((a, b) => (a.index > b.index ? a : b));
+
+      out = datNameItem(out, added, newName);
+
+      return added.index;
+    };
+
+    const deg = (turn * 180) / Math.PI;
+
+    add(t.record, ship.id, to, (rv) => {
+      const flipped = rv.getFloat32(0x1C) === 180;
+
+      rv.setFloat32(0x20, (((rv.getFloat32(0x20) + (flipped ? -deg : deg)) % 360) + 360) % 360);
+    });
+
+    const route = items0.find((i) => i.name === t.record + '_route');
+    const index = add(route.name, ship.id + '_route', carry(route.pos));
+    const added = parseDAT(viewOf(out)).items.find((i) => i.type === 3 && i.index === index);
+
+    out = splineSetPoints(out, added, splinePoints(dat instanceof DataView ? dat : viewOf(dat), route).map(carry));
+
+    for (const kind of ['camstart', 'camwatch'])
+      add(`${kind}_${t.cam}`, `${ship.id}_${kind}`, carry(items0.find((i) => i.name === `${kind}_${t.cam}`).pos));
+
+    return out;
+  }
+
   // ---- HMT: materials + textures decoded to RGBA8 ----
 
   const c5 = (v) => (v << 3) | (v >> 2);
@@ -1914,7 +2241,9 @@ function rs64Lib()
         tex: dv.getUint16(o + 2),
         name: name16(dv, o + 0x14),
         emissive: dv.getFloat32(o + 4) === 0,
-        diffuse: dv.getFloat32(o + 4)
+        diffuse: dv.getFloat32(o + 4),
+        // An ambient weight this large draws the material at full brightness (the explorer's Glow toggle sets 255).
+        glow: dv.getFloat32(o + 4) >= 127.5
       });
     }
 
@@ -2258,17 +2587,20 @@ function rs64Lib()
     return out;
   }
 
-  // Craft model import: the texture slots an imported model may take, largest first. One textured material per distinct texture, and
-  // never a texture that a named part (exhaust, glow, canopy) draws, since those parts keep their original faces.
-  function craftImportSlots(hob, hmt)
+  // Model import: the texture slots an imported model may take, largest first. One textured material per distinct texture, and never
+  // a texture that a named part (exhaust, glow, canopy) draws, since those parts keep their original faces, or that another object of
+  // a level package draws.
+  function craftImportSlots(hob, hmt, object = 0)
   {
     const named = new Set();
 
-    for (const lod of hob.objects[0].lods)
-      for (const list of lod)
-        for (const p of list)
-          if (p.name)
-            p.faces.forEach((f) => named.add(hmt.materials[f.mat]?.tex));
+    hob.objects.forEach((o, k) => {
+      for (const lod of o.lods)
+        for (const list of lod)
+          for (const p of list)
+            if (p.name || k !== object)
+              p.faces.forEach((f) => named.add(hmt.materials[f.mat]?.tex));
+    });
 
     const slots = [];
     const seen = new Set();
@@ -2457,22 +2789,52 @@ function rs64Lib()
   }
 
   // tris: [{ p: [[x, y, z] x3] in three.js display space (Y up), uv: [[u, v] x3] or null, rgba: [u32 x3], node: name, mat (optional, else opts.mat) }].
+  // Moves an object's hardpoints in place: every point of a hardpoint whose name starts with a moves entry's prefix goes to the nearest
+  // of its positions (HOB vertex units; hardpoints are stored at 1/256 of those, in their node's space, model space for nodes with flags 0/1).
+  function hobMoveHardpoints(bytes, object, moves, nodes = [])
+  {
+    const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const near = (to, p) => to.reduce((b, v) => (Math.hypot(...v.map((c, a) => c - p[a])) < Math.hypot(...b.map((c, a) => c - p[a])) ? v : b));
+
+    for (let p = dv.getUint32(8 + object * 0x74 + 0x30); p && p + 8 <= dv.byteLength && dv.getUint8(p); )
+    {
+      const name = cstr(dv, p, 6);
+      const n = dv.getUint8(p + 7);
+      const own = nodes[dv.getUint8(p + 6)]?.flags & 12;
+      const to = own ? null : moves.find(([prefix, at]) => name.startsWith(prefix) && at.length)?.[1];
+
+      for (let k = 0; to && k < n; k++)
+      {
+        const at = p + 8 + k * 36;
+        const cur = [0, 1, 2].map((j) => dv.getFloat32(at + j * 4) * 256);
+
+        near(to, cur).forEach((c, j) => dv.setFloat32(at + j * 4, c / 256));
+      }
+
+      p += 8 + n * 36;
+    }
+  }
+
   // Options: noGlass hides the canopy; exhaust is 'none' (hides flames and glows) or a 0xRRGGBB flame colour; engines lists flame positions in display space, each flame going to the nearest.
+  // trails lists contrail positions (the craft's trl hardpoints) the same way; the engine glow hardpoints (glw) follow the engines.
   // Display maps to HOB as (x, -y, -z); with plusZ the model's nose is +Z (glTF habit) and is turned to face the craft's way.
   // The model is scaled and centred onto the original craft's extent. A triangle goes to the unnamed part of the node it names
   // (model-space nodes only, flags 0/1), otherwise to the body; unnamed parts left without triangles are emptied.
-  // shortcut: first object and LOD 0 only (every player craft has one of each); nodes with their own translation (flags 4/8) are not targeted.
-  function hobImportCraft(orig, hob, tris, { mat, plusZ = true, noGlass = false, exhaust, engines = [] })
+  // Every LOD of the object (object, default the first: a player craft has one) gets the model, sized by LOD 0.
+  // shortcut: nodes with their own translation (flags 4/8) are not targeted.
+  // How an import lands on a craft object: toHob turns its axes (a half turn), s scales and place(v) maps a glTF world point to model
+  // vertex units, centred and sized onto the object's LOD 0.
+  function craftImportPlacement(hob, tris, plusZ = true, object = 0)
   {
-    const obj = hob.objects[0];
-    const lod = obj.lods[0];
+    const obj = hob.objects[object];
     const box = () => ({ mn: [Infinity, Infinity, Infinity], mx: [-Infinity, -Infinity, -Infinity] });
     const grow = (b, v) => v.forEach((c, a) => { b.mn[a] = Math.min(b.mn[a], c); b.mx[a] = Math.max(b.mx[a], c); });
     const ob = box();
     const ib = box();
 
-    for (const list of lod)
-      for (const p of list)
+    // The craft's extent from its plain parts: named ones (engine glow cards, flames, glass) are effects an import doesn't bring.
+    for (const list of obj.lods[0])
+      for (const p of list.filter((q) => !q.name))
         for (let i = 0; i < p.verts.length; i += 3)
           grow(ob, [p.verts[i], p.verts[i + 1], p.verts[i + 2]]);
 
@@ -2485,52 +2847,112 @@ function rs64Lib()
     const s = size(ob) / size(ib);
     const oc = ob.mn.map((v, a) => (v + ob.mx[a]) / 2);
     const ic = ib.mn.map((v, a) => (v + ib.mx[a]) / 2);
-    const place = (v) => toHob(v).map((c, a) => (c - ic[a]) * s + oc[a]);
-    const body = lod[0].find((p) => !p.name);
 
-    const target = (name) => {
-      const n = obj.nodeNames.get(name);
-      const p = n !== undefined && !(obj.nodes[n].flags & 12) && lod[n]?.find((q) => !q.name);
+    return { toHob, s, place: (v) => toHob(v).map((c, a) => (c - ic[a]) * s + oc[a]) };
+  }
 
-      return p || body;
-    };
+  // A ship's special-button clip (pl_crafts/a_<id>, the game's model-animation format) from part motion sampled in the glTF's world
+  // space. parts: HOB node index -> { origin (the part's pivot, world), samples: [{ t 0..1, q (turn from rest, x,y,z,w), d (move from
+  // rest) }] }. Every other part holds its rest pose; the turn is taken through the import's half turn and applied after the rest rotation.
+  function craftClipBake(obj, placement, parts, lengthMs = 1000)
+  {
+    const g = placement.toHob([1, 1, 1]);
+    const turn = (q) => [g[0] * q[0], g[1] * q[1], g[2] * q[2], q[3]];
 
-    const geos = new Map();
+    const mul = (a, b) => [
+      a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1],
+      a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0],
+      a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3],
+      a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2],
+    ];
 
-    for (const t of tris)
+    const tracks = [];
+    const rest = [];
+
+    for (let node = 1; node < obj.nodes.length; node++)
     {
-      const part = target(t.node);
+      const n = obj.nodes[node];
+      const q0 = n.flags & 4 ? [n.quat[1], n.quat[2], n.quat[3], n.quat[0]] : [0, 0, 0, 1];
+      const p0 = n.flags & 8 ? n.pos.map((v) => v * 256) : [0, 0, 0];
+      const pivot = n.flags & 1 ? n.pivot.map((v) => v * 256) : [0, 0, 0];
+      const scale = n.scale.map((v) => v * 4096);
+      const part = parts.get(node);
 
-      if (!geos.has(part))
-        geos.set(part, { verts: [], faces: [], at: new Map() });
+      if (!part?.samples.length)
+      {
+        rest.push({ flags: 0, pivot, scale, rot: q0.map((v) => v * 4096), pos: p0 });
+        tracks.push(null);
+        continue;
+      }
 
-      const g = geos.get(part);
+      const rots = part.samples.map((k) => mul(turn(k.q), q0));
+      const moves = part.samples.map((k) => placement.toHob(k.d).map((c, a) => p0[a] + c * placement.s));
+      const turned = rots.some((q) => Math.abs(q[3]) < 0.99999);
+      const moved = moves.some((p) => p.some((c, a) => Math.abs(c - p0[a]) >= 0.5));
+      const flags = (turned ? 4 : 0) | (moved ? 8 : 0);
 
-      const idx = t.p.map((v) => {
-        const h = place(v).map(Math.round);
-        const k = h.join(',');
-        if (!g.at.has(k)) { g.at.set(k, g.verts.length); g.verts.push(h); }
-
-        return g.at.get(k);
-      });
-
-      g.faces.push({ idx, mat: t.mat ?? mat, colors: t.rgba, uvs: t.uv });
+      rest.push({ flags, pivot: placement.place(part.origin), scale, rot: turned ? null : q0.map((v) => v * 4096), pos: moved ? null : p0 });
+      tracks.push({ times: part.samples.map((k) => k.t), rot: turned ? rots : null, pos: moved ? moves : null });
     }
+
+    return writeAnim({ lengthMs, unk04: 5, unk08: 0, tracks, rest });
+  }
+
+  function hobImportCraft(orig, hob, tris, { mat, plusZ = true, noGlass = false, exhaust, engines = [], trails = [], object = 0 })
+  {
+    const obj = hob.objects[object];
+    const { place } = craftImportPlacement(hob, tris, plusZ, object);
 
     let out = orig;
 
-    for (const list of lod)
-      for (const p of list)
+    for (const lod of obj.lods)
+    {
+      const body = lod[0].find((p) => !p.name);
+
+      const target = (name) => {
+        const n = obj.nodeNames.get(name);
+        const p = n !== undefined && !(obj.nodes[n].flags & 12) && lod[n]?.find((q) => !q.name);
+
+        return p || body;
+      };
+
+      const geos = new Map();
+
+      for (const t of tris)
       {
-        if (p.name)
-          continue;
+        const part = target(t.node);
 
-        const g = geos.get(p) || { verts: [], faces: [] };
+        if (!geos.has(part))
+          geos.set(part, { verts: [], faces: [], at: new Map() });
 
-        out = hobSetPartGeometry(out, p.offset, { verts: g.verts, faces: hobPairQuads(g.faces) });
+        const g = geos.get(part);
+
+        const idx = t.p.map((v) => {
+          const h = place(v).map(Math.round);
+          const k = h.join(',');
+          if (!g.at.has(k)) { g.at.set(k, g.verts.length); g.verts.push(h); }
+
+          return g.at.get(k);
+        });
+
+        g.faces.push({ idx, mat: t.mat ?? mat, colors: t.rgba, uvs: t.uv });
       }
 
-    hobEditNamedParts(out, lod, { noGlass, exhaust, engines: engines.map(place) });
+      for (const list of lod)
+        for (const p of list)
+        {
+          if (p.name)
+            continue;
+
+          const g = geos.get(p) || { verts: [], faces: [] };
+
+          out = hobSetPartGeometry(out, p.offset, { verts: g.verts, faces: hobPairQuads(g.faces) });
+        }
+
+      hobEditNamedParts(out, lod, { noGlass, exhaust, engines: engines.map(place) });
+    }
+
+    hobMoveHardpoints(out, object, [['trl', trails.map(place)], ['glw', engines.map(place)]], obj.nodes);
 
     return out;
   }
@@ -2992,11 +3414,12 @@ function rs64Lib()
 
   // A new path under name: a stock path's record with no events or continuation, a straight line of 4 points from `at` (where its NPC
   // starts) in the stock path's first direction and spacing, ending in an attack on the player. Returns splineCopy's shape.
-  function splineNew(fromBytes, spline, toBytes, { name, at, attack })
+  // heading: the yaw (radians, models look down +Z) the path leaves along; without it, the stock path's first leg.
+  function splineNew(fromBytes, spline, toBytes, { name, at, attack, heading = null })
   {
     const fdv = viewOf(fromBytes);
     const src = splinePoints(fdv, spline);
-    const d = [src[2][0] - src[1][0], 0, src[2][2] - src[1][2]];
+    const d = heading == null ? [src[2][0] - src[1][0], 0, src[2][2] - src[1][2]] : [Math.sin(heading), 0, Math.cos(heading)];
     const len = Math.hypot(...d) || 1;
     const step = Math.max(10, Math.hypot(...src[src.length - 1].map((v, a) => v - src[0][a])) / (src.length - 1));
     const dir = d.map((v) => (v / len) * step);
@@ -3074,7 +3497,46 @@ function rs64Lib()
   const isUnit = (it) => it.type === 0 && ![0x01, 0x02, 0x26, 0x27].includes(it.sub);
   const isTriggerArea = (it) => it.type === 7 && (it.sub === 0x18 || it.sub === 0x19);
   const isFlightPath = (it) => it.type === 3 && it.sub === 3 && it.points?.length >= 4;
-  const unitDeath = (dv, it) => Object.fromEntries(Object.entries(UNIT_DEATH).map(([k, o]) => [k, dv.getInt32(it.offset + o)]));
+
+  // A unit field the record really has: inside the record and before the model name an unnamed prop keeps inline (offset at +0x5C; the
+  // 0x6C-byte scenery records put it at +0x60, where units keep their spawn gate). Anything else reads as 0.
+  const hasUnitField = (dv, it, o) => {
+    const name = dv.getUint32(it.offset + 0x5C);
+
+    return o + 4 <= dv.getUint32(it.offset + 8) && !(name && name <= o + 3);
+  };
+
+  const unitDeath = (dv, it) => Object.fromEntries(Object.entries(UNIT_DEATH).map(([k, o]) => [k, hasUnitField(dv, it, o) ? dv.getInt32(it.offset + o) : 0]));
+
+  // Whether a unit's record holds a spawn gate and a death effect at all (unnamed scenery does not).
+  const unitHasEvents = (dv, it) => hasUnitField(dv, it, 0x68) && hasUnitField(dv, it, 0x84);
+
+  function unitDeathSet(bytes, it, patch)
+  {
+    const dv = viewOf(bytes);
+
+    if (!unitHasEvents(dv, it))
+      throw new Error(`${it.name || 'This object'} cannot spawn or set anything when destroyed`);
+
+    for (const [k, v] of Object.entries(patch))
+      dv.setInt32(it.offset + UNIT_DEATH[k], v);
+  }
+
+  // Every unit record's spawn gate (isDatItemConditionMet): it stays out of the level until flag +0x60 is set and counter +0x64 reaches +0x68
+  // (0 skips that test). The waves, power-ups and troopers a destroyed building releases all use it.
+  const UNIT_GATE = { flag: 0x60, counter: 0x64, atLeast: 0x68 };
+  const unitGate = (dv, it) => Object.fromEntries(Object.entries(UNIT_GATE).map(([k, o]) => [k, hasUnitField(dv, it, o) ? dv.getInt32(it.offset + o) : 0]));
+
+  function unitGateSet(bytes, it, gate)
+  {
+    const dv = viewOf(bytes);
+
+    if (!unitHasEvents(dv, it))
+      throw new Error(`${it.name || 'This object'} cannot be held back from the start`);
+
+    for (const [k, o] of Object.entries(UNIT_GATE))
+      dv.setInt32(it.offset + o, gate[k] ?? 0);
+  }
 
   // Objective counters and flags the level's DAT already uses (so objectives take others).
   function levelUsedObjectiveSlots(dv) {
@@ -3264,6 +3726,15 @@ function rs64Lib()
     dv.setFloat32(o + 0x68, water.speed);
   }
 
+  // How far in from every map edge the game turns the craft back (loadPlayerStartPosition); 15 without a start record.
+  function datFlightInset(bytes)
+  {
+    const dv = viewOf(bytes);
+    const o = datWaterOffset(dv);
+
+    return o < 0 ? 15 : dv.getFloat32(o + 0x8C);
+  }
+
   // A level's fog and clouds (src/game/mod_content/level_environment.h).
   const ENV_PATH = (folder) => 'mod/assets/level/' + folder + '/environment.json';
 
@@ -3389,6 +3860,16 @@ function rs64Lib()
 
   // Gives the named textures of an HMT their own names, tagged with the level: the game shares a loaded texture with any later one of the same
   // name, so a borrowed package's would show another model's pixels. Names keep their 16-byte slots (15 characters and a NUL).
+  // Every texture of a new ship's HMT under a name of its own: in a mission the level's wingman model of the same craft loads first and
+  // would lend its textures to the ship's.
+  function hmtOwnTextures(bytes, tag)
+  {
+    const dv = viewOf(bytes);
+    const count = dv.getUint16(dv.getUint32(4));
+
+    return hmtRenameTextures(bytes, tag, new Set(Array.from({ length: count }, (_, i) => cstr(dv, hmtNameAt(dv, i), 16))));
+  }
+
   function hmtRenameTextures(bytes, lv, names)
   {
     const out = bytes.slice();
@@ -3802,6 +4283,134 @@ function rs64Lib()
     return out;
   }
 
+  // The HMP at a larger map size (w x h cells). The old map keeps cell (0, 0), so every world position stays put, and the ground continues
+  // past the old edges with the edge heights and textures. The light list (world positions) moves along unchanged.
+  // ox / oz of the new cells go on the -X / -Z sides, so the old ground moves 2 units a cell toward +X / +Z and everything placed must
+  // move with it. The game ignores the header's own origin (+0x00, +0x08) in places, so that stays 0.
+  function hmpResize(orig, w, h, ox = 0, oz = 0)
+  {
+    const dv = viewOf(orig);
+    const ow = dv.getUint16(0x24);
+    const oh = dv.getUint16(0x26);
+
+    if (w < ow + ox || h < oh + oz || ox < 0 || oz < 0)
+      throw new Error('A map can only grow');
+
+    const light = dv.getUint32(0x20);
+    const tileOff = dv.getUint32(0x1C);
+    const count = dv.getUint16(0x18);
+    const newLight = (0x28 + w * h * 2 + 3) & ~3;
+    const newTiles = newLight + tileOff - light;
+    const out = new Uint8Array((newTiles + count * 0x1E + 3) & ~3);
+    const o = new DataView(out.buffer);
+
+    out.set(orig.subarray(0, 0x28));
+    out.set(orig.subarray(light, tileOff), newLight);
+    out.set(orig.subarray(tileOff, tileOff + count * 0x1E), newTiles);
+    o.setUint32(0x1C, newTiles);
+    o.setUint32(0x20, newLight);
+    o.setUint16(0x24, w);
+    o.setUint16(0x26, h);
+
+    const clampTo = (v, lo, n) => Math.min(Math.max(v - lo, 0), n - 1);
+
+    for (let ty = 0; ty < h; ty++)
+      for (let tx = 0; tx < w; tx++)
+        o.setUint16(0x28 + (ty * w + tx) * 2, dv.getUint16(0x28 + (clampTo(ty, oz, oh) * ow + clampTo(tx, ox, ow)) * 2));
+
+    // Repeated edge cells don't meet their copies, so the new area takes the old edge's vertex heights instead.
+    const grid = hmpGrid(parseHMP(o));
+    const [X0, Z0, X1, Z1] = [ox * 4, oz * 4, (ox + ow) * 4, (oz + oh) * 4];
+
+    for (let Y = 0; Y < grid.H; Y++)
+      for (let X = 0; X < grid.W; X++)
+        if (X < X0 || X > X1 || Y < Z0 || Y > Z1)
+          grid.hts[Y * grid.W + X] = grid.hts[Math.min(Math.max(Y, Z0), Z1) * grid.W + Math.min(Math.max(X, X0), X1)];
+
+    return writeHMP(out, grid);
+  }
+
+  // Moves the HMP's point lights by (dx, dz) world units. Lighting block (+0x20): count, shadow and world colours, then 0x20-byte lights
+  // from +0x0C: RGB floats, a word (0 on the sun), XYZ (the sun's direction, else its world position), radius.
+  function hmpShiftLights(bytes, dx, dz)
+  {
+    const out = bytes.slice();
+    const o = new DataView(out.buffer, out.byteOffset, out.byteLength);
+    const L = o.getUint32(0x20);
+    const n = o.getUint32(L);
+
+    for (let k = 0; k < n; k++)
+    {
+      const p = L + 0x0C + k * 0x20;
+
+      if (!o.getUint32(p + 0x0C) || p + 0x20 > o.getUint32(0x1C))
+        continue;
+
+      o.setFloat32(p + 0x10, o.getFloat32(p + 0x10) + dx);
+      o.setFloat32(p + 0x18, o.getFloat32(p + 0x18) + dz);
+    }
+
+    return out;
+  }
+
+  // The level's sun (the first light of the HMP lighting block): dir the way its light travels, game Y-down (y > 0 shines down), and its
+  // colour as 0-255 floats. world is the lit-ground colour (bytes) the terrain shading scales by N.L.
+  function hmpSetSun(bytes, { dir, color, world })
+  {
+    const o = viewOf(bytes);
+    const L = o.getUint32(0x20);
+
+    color.forEach((v, k) => o.setFloat32(L + 0x0C + k * 4, v));
+    dir.forEach((v, k) => o.setFloat32(L + 0x1C + k * 4, v));
+    world.forEach((v, k) => o.setUint8(L + 8 + k, Math.max(0, Math.min(255, Math.round(v)))));
+  }
+
+  // Moves every DAT item by (dx, dz) world units: each record's position is at +0x10, and splines, zones and areas are relative to it.
+  function datShift(bytes, dx, dz)
+  {
+    const out = bytes.slice();
+    const o = new DataView(out.buffer, out.byteOffset, out.byteLength);
+
+    for (const it of parseDAT(o).items)
+    {
+      o.setFloat32(it.offset + 0x10, it.pos[0] + dx);
+      o.setFloat32(it.offset + 0x18, it.pos[2] + dz);
+    }
+
+    return out;
+  }
+
+  // Moves a cutscene by (dx, dz) world units: every camera's position channels and each root actor's (children ride on their parent).
+  // Positions are stored at 4x world.
+  function cutsceneShift(bytes, dx, dz)
+  {
+    const data = parseCutscene(viewOf(bytes));
+
+    const add = (keys, d) => {
+      for (let i = 0; i < keys.length; i += 3)
+        keys[i] += d * 4;
+    };
+
+    for (const c of data.cameras.filter(Boolean))
+    {
+      add(c[0], dx);
+      add(c[2], dz);
+    }
+
+    for (const a of data.actors.filter((x) => x.parent < 0))
+    {
+      if (a.animated) {
+        add(a.ch[0], dx);
+        add(a.ch[2], dz);
+      } else {
+        a.value[0] += dx * 4;
+        a.value[2] += dz * 4;
+      }
+    }
+
+    return writeCutscene(data);
+  }
+
   // ---- Terrain textures: lv_X_TEX maps a tile's texmap id to an entry in the shared data/level/tex bank ----
 
   function parseTexTable(dv)
@@ -4117,6 +4726,9 @@ function rs64Lib()
 
           item.length = f(0x24);
 
+          if (item.sub === 3 && item.name)
+            item.loops = splineLoops(dv, item);
+
           // Event nodes (func_800F410C): count +0x28, 8-byte nodes at item + [+0x2C] = { f32 fraction along the path, u16, u16 k };
           // k indexes the spline's reference table at item + [+0xD8] + 0xD4 (4-byte entries), whose u16 at +2 is the type-7 item fired.
           const ne = dv.getUint32(it + 0x28);
@@ -4280,7 +4892,10 @@ function rs64Lib()
   // One track per model node after the root (track i drives node i + 1). Key times run 0..4096 over one cycle.
   // Track flags use the node bits: 4 = rotation keys (quaternion x,y,z,w x4096), 8 = translation keys (vertex units).
   // Header +0x0C looks like the cycle length in ms (AT-AT walk 6477); it is 0 for the AT-ST.
-  function parseAnim(dv) {
+  // Each track's lists follow the track table in order: key times, pivot (3), scale (3, x4096), rotation, translation; a list without its
+  // key flag holds one value, the part's rest pose (rest[i]: pivot, scale, rot and pos when not keyed, as stored).
+  function parseAnim(dv)
+  {
     if (dv.getUint32(4) !== 0xC)
       return null;
 
@@ -4288,18 +4903,33 @@ function rs64Lib()
     const t2 = dv.getUint32(t1);
     const count = dv.getUint16(t1 + 0xE);
     const s16 = (o) => dv.getInt16(o);
+    const s16s = (o, n) => Array.from({ length: n }, (_, k) => s16(o + k * 2));
     const tracks = [];
+    const rest = [];
 
     for (let i = 0; i < count; i++)
     {
       const e = t2 + i * 0x1C;
       const n = dv.getUint32(e);
       const flags = dv.getUint32(e + 4);
-      if (!n) { tracks.push(null); continue; }
-      const times = [];
-      const times0 = dv.getUint32(e + 8);
       const quads = dv.getUint32(e + 20);
       const trans = dv.getUint32(e + 24);
+
+      rest.push({
+        flags,
+        pivot: s16s(dv.getUint32(e + 12), 3),
+        scale: s16s(dv.getUint32(e + 16), 3),
+        rot: flags & 4 ? null : s16s(quads, 4),
+        pos: flags & 8 ? null : s16s(trans, 3),
+      });
+
+      if (!n) {
+        tracks.push(null);
+        continue;
+      }
+
+      const times = [];
+      const times0 = dv.getUint32(e + 8);
 
       for (let k = 0; k < n; k++)
         times.push(s16(times0 + k * 2) / 4096);
@@ -4310,7 +4940,59 @@ function rs64Lib()
       tracks.push({ times, rot, pos });
     }
 
-    return { lengthMs: dv.getUint16(t1 + 0xC), tracks };
+    return { lengthMs: dv.getUint16(t1 + 0xC), unk04: dv.getUint32(t1 + 4), unk08: dv.getUint32(t1 + 8), tracks, rest };
+  }
+
+  // parseAnim's inverse: { lengthMs, unk04, unk08, tracks, rest } back to the game's file (a keyed list per flag 4 / 8, single rest values
+  // otherwise).
+  function writeAnim(anim)
+  {
+    const count = anim.rest.length;
+    const lists = [];
+    let size = 0x1C + count * 0x1C;
+
+    const s16 = (v) => Math.max(-32768, Math.min(32767, Math.round(v)));
+
+    for (let i = 0; i < count; i++)
+    {
+      const r = anim.rest[i];
+      const t = anim.tracks[i];
+      const n = t ? t.times.length : 0;
+      const times = t ? t.times.map((v) => s16(v * 4096)) : [];
+      const rot = r.flags & 4 ? t.rot.flatMap((q) => q.map((v) => s16(v * 4096))) : r.rot;
+      const pos = r.flags & 8 ? t.pos.flatMap((p) => p.map(s16)) : r.pos;
+      const parts = [times, r.pivot, r.scale, rot, pos];
+      const at = [];
+
+      for (const p of parts)
+      {
+        at.push(p.length ? size : 0);
+        size += p.length * 2;
+      }
+
+      lists.push({ n, flags: r.flags, parts, at });
+    }
+
+    const out = new DataView(new ArrayBuffer(size));
+
+    out.setUint32(0, 1);
+    out.setUint32(4, 0xC);
+    out.setUint32(0xC, 0x1C);
+    out.setUint32(0x10, anim.unk04 ?? 0);
+    out.setUint32(0x14, anim.unk08 ?? 0);
+    out.setUint16(0x18, anim.lengthMs ?? 0);
+    out.setUint16(0x1A, count);
+
+    lists.forEach((l, i) => {
+      const e = 0x1C + i * 0x1C;
+
+      out.setUint32(e, l.n);
+      out.setUint32(e + 4, l.flags);
+      l.at.forEach((a, k) => out.setUint32(e + 8 + k * 4, a));
+      l.parts.forEach((p, k) => p.forEach((v, j) => out.setInt16(l.at[k] + j * 2, s16(v))));
+    });
+
+    return new Uint8Array(out.buffer);
   }
 
   // ---- Voice lines: voice id -> text id (u16 table at 0x8009FFE0 in boot code) -> XOR-chained English string in data/voice_TXT ----
@@ -6232,10 +6914,20 @@ function rs64Lib()
   // this can't name. Follows the level's start-up and per-frame code, callbacks that wait on a flag or counter, timers and calls into mission code.
   function missionScript(romBytes, level)
   {
-    const FN = { setFlag: 0x800C7540, getFlag: 0x800C759C, addCount: 0x800C75EC, getCount: 0x800C761C, whenMet: 0x800C7830, after: 0x800C7864 };
+    // camera: setHudFlagBit40AndStoreArg, which starts the in-mission camera sequence named by a0.
+    const FN = { setFlag: 0x800C7540, getFlag: 0x800C759C, addCount: 0x800C75EC, getCount: 0x800C761C, whenMet: 0x800C7830, after: 0x800C7864, camera: 0x800C7884 };
     const toRom = (a) => a - 0x7FFFF400;
     const word = (a) => ((romBytes[toRom(a)] << 24) | (romBytes[toRom(a) + 1] << 16) | (romBytes[toRom(a) + 2] << 8) | romBytes[toRom(a) + 3]) >>> 0;
-    const out = { flags: new Map(), counters: new Map() };
+    const out = { flags: new Map(), counters: new Map(), cameras: [] };
+
+    const text = (a) => {
+      let t = '';
+
+      for (let k = 0; k < 64 && romBytes[toRom(a) + k]; k++)
+        t += String.fromCharCode(romBytes[toRom(a) + k]);
+
+      return t;
+    };
 
     if (word(0x8010A450) !== 0x80101090)
       return out;
@@ -6348,6 +7040,8 @@ function rs64Lib()
             record(out.flags, a0);
           else if (to === FN.addCount)
             record(out.counters, a0);
+          else if (to === FN.camera && a0 !== undefined)
+            out.cameras.push({ name: text(a0 >>> 0), needs: [...base, ...needs] });
           else if (to === FN.whenMet)
             walk(a0 >>> 0, [...base, ...needs, ...(a1 && a2 ? [{ flag: a1 }] : []), ...(a3 ? [{ counter: a3, atLeast: arg4 }] : [])], depth + 1);
           else if (to === FN.after)
@@ -6534,6 +7228,59 @@ function rs64Lib()
 
   // A path's 8 continuation blocks (+0x60, 16 bytes each) start with the offset of the paths its craft can go on to.
   const PATH_LINK_FIELDS = Array.from({ length: 8 }, (_, k) => 0x60 + k * 16);
+
+  // The slots a craft picks its next path from: the first whose condition word (+4) holds, 0 = always. The 8th block holds other data.
+  const PATH_LINK_SLOTS = PATH_LINK_FIELDS.slice(0, 7);
+  const slotOf = (dv, item, name) => PATH_LINK_SLOTS.find((f) => nameListGet(dv, item, f).includes(name));
+
+  // A path loops when its craft go round again: a slot names the path itself (the stock loops also end their travel points where they
+  // start, the two outer points copying the travel points beside the join, so the curve closes smoothly).
+  function splineLoops(dv, item) {
+    return slotOf(dv, item, item.name) !== undefined;
+  }
+
+  // Why a loop would never be taken: an earlier slot that always sends the craft elsewhere, or null.
+  function splineLoopBlocked(dv, item)
+  {
+    const f = PATH_LINK_SLOTS.find((x) => nameListGet(dv, item, x).length && !dv.getUint32(item.offset + x + 4));
+
+    return f === undefined || nameListGet(dv, item, f).includes(item.name) ? null : nameListGet(dv, item, f)[0];
+  }
+
+  // Turns a path's loop on (closes its shape, adds itself to its first free slot) or off (clears that slot). The attack at the end is
+  // the caller's: a loop never reaches the end, and a path that leads nowhere needs one.
+  function splineSetLoop(bytes, item, on)
+  {
+    const find = (b) => parseDAT(viewOf(b)).items.find((x) => x.type === 3 && x.index === item.index);
+    const at = slotOf(viewOf(bytes), item, item.name);
+
+    if (!on) {
+      if (at !== undefined)
+        viewOf(bytes).setUint32(item.offset + at, 0);
+
+      return bytes;
+    }
+
+    if (at !== undefined)
+      return bytes;
+
+    const travel = item.points.slice(1, -1).map((p) => p.slice());
+    const [a, b] = [travel[0], travel.at(-1)];
+
+    if (Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) > 1e-3)
+      travel.push(a.slice());
+
+    let out = splineSetPoints(bytes, item, [travel.at(-2).slice(), ...travel, travel[1].slice()]);
+    const now = find(out);
+    const free = PATH_LINK_SLOTS.find((x) => !nameListGet(viewOf(out), now, x).length && !viewOf(out).getUint32(now.offset + x + 4));
+
+    if (free === undefined)
+      throw new Error(`${item.name} has no free slot for its loop`);
+
+    out = nameListSet(out, now, free, [item.name]);
+
+    return out;
+  }
 
   // Names an item, and moves the NPCs flying it (a path, or "+name" for a roam area), the trigger areas it sets off and the paths
   // continuing into it to the new name.
@@ -8118,7 +8865,9 @@ function rs64Lib()
         else
           h.push({ label, changes: [{ path, before, after }] });
       },
+      // context(): where the edit was made (the page's own view state), kept on the step so undo can go back there.
       push(step) {
+        step.ctx ??= h.context?.();
         h.steps.length = h.at;
         h.steps.push(step);
         h.at = h.steps.length;
@@ -8563,10 +9312,38 @@ function rs64Lib()
   const CUT_BANK_G = 2.2;
 
   // Mid-mission camera shots: a mod's camera_shots.txt, one "<level> <trigger> <camera> [personal]" (a later line wins) or
-  // "<level> <trigger> destroy <object>" (they add up) per line, '#' comments, as the game reads it (src/game/mod_content/camera_shots.h).
+  // "<level> <trigger> destroy <object>" (they add up) or "<level> <camera> replace <camera>|none" per line, # comments, as the game reads it
+  // (src/game/mod_content/camera_shots.h).
   // personal: in co-op only the player who set the trigger off sees it.
   const shotFields = (line) => (line.trim().startsWith('#') ? [] : line.trim().split(/\s+/).filter(Boolean));
-  const shotIsCamera = (f, level, trigger) => f.length >= 3 && f[0] === level && f[1] === trigger && f[2] !== 'destroy';
+  const shotIsCamera = (f, level, trigger) => f.length >= 3 && f[0] === level && f[1] === trigger && f[2] !== 'destroy' && f[2] !== 'replace';
+  const shotIsSwap = (f, level, camera) => f.length >= 4 && f[0] === level && f[1] === camera && f[2] === 'replace';
+
+  // "<level> <camera> replace <camera>|none": what plays when the mission script starts that camera. null keeps it, '' is nothing.
+  function shotSwapGet(text, level, camera) {
+    let to = null;
+
+    for (const line of text.split('\n')) {
+      const f = shotFields(line);
+
+      if (shotIsSwap(f, level, camera))
+        to = f[3] === 'none' ? '' : f[3];
+    }
+
+    return to;
+  }
+
+  // The text with that camera's replace line set to `to` ('' for nothing), or removed (null, or the camera itself); LF endings.
+  function shotSwapSet(text, level, camera, to)
+  {
+    const out = shotLines(text).filter((l) => !shotIsSwap(shotFields(l), level, camera));
+
+    if (to !== null && to !== camera)
+      out.push(`${level} ${camera} replace ${to || 'none'}`);
+
+    return out.length ? out.join('\n') + '\n' : '';
+  }
+
   const shotIsDestroy = (f, level, trigger) => f.length >= 4 && f[0] === level && f[1] === trigger && f[2] === 'destroy';
   const shotLines = (text) => text.replace(/\r/g, '').split('\n').filter((l, i, a) => i < a.length - 1 || l);
 
@@ -9835,7 +10612,7 @@ function rs64Lib()
     return { current, history };
   }
 
-  globalThis.RS64 = { orderSetTarget, recordSetName, shotDropCameras, openRom, FONT_STRIP_HEADER, MOD_KINDS, modChangeKind, LIGHTS_ANY_LEVEL, spriteKeys, lightsParse, lightsWrite, hobMeshKey, meshKeyName, lightsMeshMatches, lightNew, menuItemKey, menuItemKeys, menuLinks, exportPlan, menuParse, menuWrite, menuWriteSubset, menuMerge, menuLayout, menuFontGaps, NATIVE_MENUS, MENU_DEFAULT_BUTTONS, menuWithDefaults, fontCovers, gameFonts, glyphPackParse, glyphPackWrite, langChars, encodeJpeg, CRAWL_STOCK_CAMERA, crawlCameraAt, CRAWL_PLANETS, CRAWL_PATH, crawlFontGaps, stockCrawls, crawlParse, crawlWrite, crawlFont, crawlLayout, parseShadowTextures, cutClips, cutDragClip, zipRead, zipUnpack, applyBPS, projectWrite, projectRead, createHistory, parseCutscene, writeCutscene, CUT_LIMITS, CUT_ACTOR_EVENTS, cutRecomputeSlopes, cutAddEvent, cutRemoveEvent, cutMoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutAnimateActor, cutSetActorName, cutRemoveActor, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutUnbake, cutBake, cutBakedEvents, cutSyncModeSpans, shotLinkGet, shotLinkSet, shotDestroyGet, shotDestroySet, shotRename, datRenameItem, triggerSetActivators, nameListGet, PATH_LINK_FIELDS, cutsceneValue, encodeTexture, encodeBPS, zipStore, crc32, hmpGrid, writeHMP, datAddItem, datRemoveItem, datReplaceItem, datLookup, datRebuildNameMap, modLevelsParse, modLevelsWrite, modLevelNew, modLevelAliases, medalInfo, MEDALS_SIMPLE, objectivesApply, objectiveTargets, levelUsedObjectiveSlots, isUnit, isTriggerArea, isFlightPath, datBlank, hmpFlat, datWaterGet, datWaterSet, ENV_PATH, envParse, envWrite, recordInert, npcPathGet, npcSetPath, npcPathField, datRemoveIndexed, parseMusicCues, musicZoneSet, musicZoneEdit, musicConditionSources, musicGaps, musicRegionBox, musicMargin, musicAddTrigger, datNameItem, RULE_WHENS, RULE_ACTIONS, RULES_PATH, RULES_JSON_PATH, rulesParse, rulesExtParse, modChecksOf, menuExtParse, rulesWrite, ruleRefs, rulesRename, rulesBroken, rulesScriptParse, rulesScriptWrite, rulesScriptCheck, rulesComplete, rulesVariables, condCheck, condRename, splinePoints, splineSetPoints, splineAt, splineEvents, splineCopy, splineNew, splineAttackEnd, splineSetAttackEnd, uniqueName, PATH_EVENT_KEEP, PATH_ATTACK_AT, WAVE_FIELDS, waveGet, waveSet, missionScript, scriptUnits, arrowWrite, arrowSources, unitDeath, levelUsedObjectiveSlots, levelUsedFlags, waveFlagFor, triggerWave, UNITS_ANY_LEVEL, UNITS_NEED_PATH, UNITS_OWN_PATH, UNIT_RECORD_FROM, MODEL_UNITS, PACKAGES_PATH, unitModelName, datAddDevastatorGuns, hmtRenameTextures, hmtRestoreNames, TRAIN_UNITS, datAddTrain, datRemoveUnit, trainOf, trainLinks, datAddEnemy, hobSetPartGeometry, craftImportSlots, hobImportCraft, parseSpriteAnim, inflate, parseHMT, parseHOB, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, encodeTerrainTex, TERRAIN_TEX_BYTES, PAINT_MARK, paintPath, terrainTexRGBA, paintApply, paintBudget, modAssetFile, parseVoiceLines, parseAnim, DAT_TYPES,
+  globalThis.RS64 = { orderSetTarget, recordSetName, shotDropCameras, openRom, FONT_STRIP_HEADER, MOD_KINDS, modChangeKind, LIGHTS_ANY_LEVEL, spriteKeys, lightsParse, lightsWrite, hobMeshKey, meshKeyName, lightsMeshMatches, lightNew, menuItemKey, menuItemKeys, menuLinks, exportPlan, menuParse, menuWrite, menuWriteSubset, menuMerge, menuLayout, menuFontGaps, NATIVE_MENUS, MENU_DEFAULT_BUTTONS, menuWithDefaults, fontCovers, gameFonts, glyphPackParse, glyphPackWrite, langChars, encodeJpeg, CRAWL_STOCK_CAMERA, crawlCameraAt, CRAWL_PLANETS, CRAWL_PATH, crawlFontGaps, stockCrawls, crawlParse, crawlWrite, crawlFont, crawlLayout, parseShadowTextures, cutClips, cutDragClip, zipRead, zipUnpack, applyBPS, projectWrite, projectRead, createHistory, parseCutscene, writeCutscene, CUT_LIMITS, CUT_ACTOR_EVENTS, cutRecomputeSlopes, cutAddEvent, cutRemoveEvent, cutMoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutAnimateActor, cutSetActorName, cutRemoveActor, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutUnbake, cutBake, cutBakedEvents, cutSyncModeSpans, shotLinkGet, shotLinkSet, shotDestroyGet, shotDestroySet, shotSwapGet, shotSwapSet, shotRename, splineLoops, splineLoopBlocked, splineSetLoop, datRenameItem, triggerSetActivators, nameListGet, PATH_LINK_FIELDS, cutsceneValue, encodeTexture, encodeBPS, zipStore, crc32, hmpGrid, writeHMP, hmpResize, hmpShiftLights, datShift, cutsceneShift, hmpSetSun, datAddItem, datRemoveItem, datReplaceItem, datLookup, datRebuildNameMap, modLevelsParse, modLevelsWrite, modLevelNew, modLevelAliases, SHIP_TEMPLATES, SHIP_SPOTS, shipsParse, shipsWrite, shipBehaviours, SHIP_MAX, shipPos, shipFreeSpot, shipNew, shipAliases, hobSetObjectName, hmtOwnTextures, hudIconSize, hudIconWrite, blueprintWrite, texFileRename, shipStandAt, shipSpotAt, shipHangarRemove, shipHangarAdd, medalInfo, MEDALS_SIMPLE, objectivesApply, objectiveTargets, levelUsedObjectiveSlots, isUnit, isTriggerArea, isFlightPath, datBlank, hmpFlat, datWaterGet, datWaterSet, datFlightInset, ENV_PATH, envParse, envWrite, recordInert, npcPathGet, npcSetPath, npcPathField, datRemoveIndexed, parseMusicCues, musicZoneSet, musicZoneEdit, musicConditionSources, musicGaps, musicRegionBox, musicMargin, musicAddTrigger, datNameItem, RULE_WHENS, RULE_ACTIONS, RULES_PATH, RULES_JSON_PATH, rulesParse, rulesExtParse, CRAFT_RULE_EXT, modChecksOf, menuExtParse, rulesWrite, ruleRefs, rulesRename, rulesBroken, rulesScriptParse, rulesScriptWrite, rulesScriptCheck, rulesComplete, rulesVariables, condCheck, condRename, splinePoints, splineSetPoints, splineAt, splineEvents, splineCopy, splineNew, splineAttackEnd, splineSetAttackEnd, uniqueName, PATH_EVENT_KEEP, PATH_ATTACK_AT, WAVE_FIELDS, waveGet, waveSet, missionScript, scriptUnits, arrowWrite, arrowSources, unitDeath, levelUsedObjectiveSlots, levelUsedFlags, waveFlagFor, triggerWave, unitGate, unitGateSet, unitDeathSet, unitHasEvents, UNITS_ANY_LEVEL, UNITS_NEED_PATH, UNITS_OWN_PATH, UNIT_RECORD_FROM, MODEL_UNITS, PACKAGES_PATH, unitModelName, datAddDevastatorGuns, hmtRenameTextures, hmtRestoreNames, TRAIN_UNITS, datAddTrain, datRemoveUnit, trainOf, trainLinks, datAddEnemy, hobSetPartGeometry, craftImportSlots, hobImportCraft, craftImportPlacement, craftClipBake, hobMoveHardpoints, parseSpriteAnim, inflate, parseHMT, parseHOB, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, encodeTerrainTex, TERRAIN_TEX_BYTES, PAINT_MARK, paintPath, terrainTexRGBA, paintApply, paintBudget, modAssetFile, parseVoiceLines, parseAnim, writeAnim, DAT_TYPES,
     parseSdir, decodeMusyxAdpcm, wavBytes, parseSpeech, decodeMort, encodeMort, parseVoiceTable, parseMenuVoice, parseFrontText, parseCutsceneVoice, parsePool, parseSfxTable, renderSfx, triggerVoiceIds, parseSongTable, parseSongGroups, parseSong, resolveNote, parseMixTables, renderVoice, renderSong, applyMusyxReverb };
 }
 
