@@ -10,6 +10,7 @@ the game state, draw counts, frame times and (in missions) player, camera, wingm
 Make a baseline with `run --tag baseline`. Frame times in the other sections run at --speed; the perf section measures each repo video preset at real speed.
 """
 import argparse
+import concurrent.futures
 import fnmatch
 import json
 import os
@@ -261,6 +262,9 @@ def session(out, env, body, speed, record=None, settings=None, isolate=False):
         with open(os.path.join(game.target_dir, "error.txt"), "a", encoding="utf-8") as f:
             f.write(error + "\n" + game.log_tail(60) + "\n")
 
+        # The whole log of a failed launch, since the cause is often far above the tail.
+        shutil.copy(game.log_path, os.path.join(game.target_dir, "game.log"))
+
     for leftover in (record, record and record + ".hash"):
         if leftover and os.path.exists(leftover):
             os.remove(leftover)
@@ -277,7 +281,7 @@ def enter(game, target_dir):
     os.makedirs(target_dir, exist_ok=True)
 
     # A rerun target keeps none of an earlier run's failure notes.
-    for name in ("error.txt", "faults.txt", "skipped.txt", "ended.txt"):
+    for name in ("error.txt", "faults.txt", "skipped.txt", "ended.txt", "game.log"):
         if os.path.exists(os.path.join(target_dir, name)):
             os.remove(os.path.join(target_dir, name))
 
@@ -1014,7 +1018,31 @@ def camera_run(out, level, craft, cheats, at, rate, spec, speed):
     session(out, env, body, speed, settings={"targetFramerate": rate, "frameInterpolation": False})
 
 
+# image_diff results by file pair, reused while both files keep their times and sizes (smoke.py serve compares again on every page load).
+DIFF_CACHE = {}
+
+
 def image_diff(a, b, diff_path=None):
+
+    stamp = tuple((s.st_mtime_ns, s.st_size) for s in (os.stat(a), os.stat(b)))
+    hit = DIFF_CACHE.get((a, b))
+
+    if hit and hit[0] == stamp and (hit[1] == 0 or not diff_path or os.path.exists(diff_path)):
+        return hit[1]
+
+    pct = image_diff_uncached(a, b, diff_path)
+    DIFF_CACHE[(a, b)] = (stamp, pct)
+
+    return pct
+
+
+def image_diff_uncached(a, b, diff_path):
+
+    # Most pairs are byte-identical, which needs no decoding.
+    if os.path.getsize(a) == os.path.getsize(b):
+        with open(a, "rb") as fa, open(b, "rb") as fb:
+            if fa.read() == fb.read():
+                return 0.0
 
     ia = Image.open(a).convert("RGB")
     ib = Image.open(b).convert("RGB")
@@ -1029,7 +1057,7 @@ def image_diff(a, b, diff_path=None):
 
     if diff_path and over:
         os.makedirs(os.path.dirname(diff_path), exist_ok=True)
-        Image.composite(Image.new("RGB", ia.size, (255, 0, 255)), ImageChops.multiply(ib, Image.new("RGB", ib.size, (90, 90, 90))), m).save(diff_path)
+        Image.composite(Image.new("RGB", ia.size, (255, 0, 255)), ImageChops.multiply(ib, Image.new("RGB", ib.size, (90, 90, 90))), m).save(diff_path, compress_level=1)
 
     return 100.0 * over / (ia.size[0] * ia.size[1])
 
@@ -1050,6 +1078,9 @@ RULES = {
 STAT_FIELDS = ["player", "camera", "wingmen", "npcs"]
 # A preset whose average frame time grew by more than this fraction fails.
 PERF_SLOWER = 0.15
+
+# A shot in the run with none in the baseline: shown as new, not failed.
+NEW_SHOT = "new, not in the baseline"
 # A memory run whose private bytes grow by more than this per replay of its level (the median, memory_growth) fails.
 MEMORY_GROWTH_MB = 16
 # A craft's chase camera fails when its mean distance in a phase at any frame rate differs from the 30 fps run's by more than this fraction.
@@ -1090,17 +1121,30 @@ def visual_leaks(run_dir, visual):
     return problems
 
 
-def compare(args):
+def compare_rows(baseline, tag, platform):
+    """The comparison of one run against the baseline as (base folder, run folder, rows); each row is (path, pixels changed, failing problems, known problems)."""
 
     with open(os.path.join(HERE, "manifest.toml"), "rb") as f:
         manifest = tomllib.load(f)
 
     visual = manifest["changes"]["visual"]
-    known = [k for k in manifest.get("known", []) if args.platform in ([k["platform"]] if isinstance(k["platform"], str) else k["platform"])]
-    base = os.path.join(OUT, args.baseline, args.platform)
-    cur = os.path.join(OUT, args.tag, args.platform)
+    known = [k for k in manifest.get("known", []) if platform in ([k["platform"]] if isinstance(k["platform"], str) else k["platform"])]
+    base = os.path.join(OUT, baseline, platform)
+    cur = os.path.join(OUT, tag, platform)
     leaks = visual_leaks(cur, visual)
     rows = []
+
+    # The image pairs are diffed in parallel first, so the walk below reads them from the cache.
+    pairs = []
+
+    for root, dirs, files in os.walk(base):
+        dirs[:] = [d for d in dirs if not d.startswith("_")]
+        pairs += [os.path.relpath(os.path.join(root, n), base) for n in files if n.endswith(".png")]
+
+    pairs = [rel for rel in pairs if os.path.exists(os.path.join(cur, rel))]
+
+    with concurrent.futures.ThreadPoolExecutor(8) as pool:
+        list(pool.map(lambda rel: image_diff(os.path.join(base, rel), os.path.join(cur, rel), os.path.join(cur, "_diff", rel)), pairs))
 
     for root, dirs, files in os.walk(base):
         dirs[:] = [d for d in dirs if not d.startswith("_")]
@@ -1140,7 +1184,7 @@ def compare(args):
             rel = os.path.relpath(os.path.join(root, name), cur)
 
             if name.endswith(".png") and not os.path.exists(os.path.join(base, rel)):
-                rows.append((rel, None, ["new, not in the baseline"]))
+                rows.append((rel, None, [NEW_SHOT]))
 
     for root, _, files in os.walk(cur):
         for name in ("error.txt", "faults.txt"):
@@ -1210,18 +1254,23 @@ def compare(args):
 
         rows.append((f"{rel} ({', '.join(cells)})", None, problems))
 
+    return base, cur, [(rel, pct, *split_known(rel, problems, known)) for rel, pct, problems in rows]
+
+
+def compare(args):
+
+    base, cur, rows = compare_rows(args.baseline, args.tag, args.platform)
     failed = 0
     explained = 0
-    rows = [(rel, pct, *split_known(rel, problems, known)) for rel, pct, problems in rows]
 
     for rel, pct, problems, excused in rows:
         failed += bool(problems)
         explained += bool(excused and not problems)
-        status = "FAIL" if problems else "known" if excused else "ok"
+        status = "FAIL" if problems else "new" if any(p == NEW_SHOT for p, _ in excused) else "known" if excused else "ok"
         print(f"{status:5} {rel:60} {'; '.join(problems + [p for p, _ in excused])}")
 
     report(cur, base, rows)
-    print(f"{args.platform}: {failed} of {len(rows)} failed, {explained} known; report: {os.path.join(cur, 'report.html')}")
+    print(f"{args.platform}: {failed} of {len(rows)} failed, {explained} known; report: {os.path.join(HERE, 'report', 'report.html')}?run={args.tag}/{args.platform}")
 
     return failed
 
@@ -1234,6 +1283,12 @@ def split_known(rel, problems, known):
     excused = []
 
     for problem in problems:
+
+        # A shot the baseline lacks has nothing to fail against.
+        if problem == NEW_SHOT:
+            excused.append((problem, "Only in this run; the next baseline will include it"))
+            continue
+
         entry = next((k for k in known
                       if any(fnmatch.fnmatch(path, t) for t in k["targets"])
                       and re.search(k["problem"], problem)
@@ -1248,7 +1303,115 @@ def split_known(rel, problems, known):
 
 
 def report(cur, base, rows):
-    """Writes the rows to results.js next to a copy of the report page (tools/debug/smoke/report), which builds itself from them."""
+    """Writes the rows to results.js in the run folder, which the report page (tools/debug/smoke/report) loads when opened from disk."""
+
+    data = report_data(cur, base, rows, "", os.path.relpath(base, cur).replace("\\", "/") + "/")
+
+    with open(os.path.join(cur, "results.js"), "w", encoding="utf-8") as f:
+        f.write("window.SMOKE_RESULTS = " + json.dumps(data) + ";\n")
+
+
+def list_runs(with_results):
+    """Every run folder (tag, platform) in dumps/smoke, baselines left out; with_results keeps only the compared ones and those with a level performance table."""
+
+    runs = []
+
+    for tag in sorted(os.listdir(OUT)) if os.path.isdir(OUT) else []:
+        if tag.startswith("baseline") or not os.path.isdir(os.path.join(OUT, tag)):
+            continue
+
+        for platform in sorted(os.listdir(os.path.join(OUT, tag))):
+            folder = os.path.join(OUT, tag, platform)
+
+            if not os.path.isdir(folder):
+                continue
+
+            has = [n for n in ("results.js", "levelperf.js") if os.path.exists(os.path.join(folder, n))]
+
+            if has or not with_results:
+                runs.append({"tag": tag, "platform": platform})
+
+    return runs
+
+
+def write_index():
+    """dumps/smoke/index.js: the runs the report page lists when opened from disk, where it can't read folders itself."""
+
+    os.makedirs(OUT, exist_ok=True)
+
+    with open(os.path.join(OUT, "index.js"), "w", encoding="utf-8") as f:
+        f.write("window.SMOKE_RUNS = " + json.dumps(list_runs(True)) + ";\n")
+
+
+def serve(args):
+    """The report page, every run in dumps/smoke and each run compared against the baseline when the page asks (DIFF_CACHE keeps repeat loads quick)."""
+
+    import http.server
+    import urllib.parse
+
+    report_dir = os.path.join(HERE, "report")
+
+    class Handler(http.server.SimpleHTTPRequestHandler):
+
+        def log_message(self, *a):
+
+            pass
+
+        def send_json(self, value):
+
+            body = json.dumps(value).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def translate_path(self, path):
+
+            path = urllib.parse.unquote(urllib.parse.urlsplit(path).path)
+
+            # /runs/... is dumps/smoke, anything else the report page's own folder.
+            root, rest = (OUT, path[len("/runs/"):]) if path.startswith("/runs/") else (report_dir, path.lstrip("/"))
+            full = os.path.normpath(os.path.join(root, rest))
+
+            return full if full.startswith(root) else report_dir
+
+        def do_GET(self):
+
+            parts = urllib.parse.urlsplit(self.path)
+            query = urllib.parse.parse_qs(parts.query)
+
+            if parts.path == "/":
+                self.send_response(302)
+                self.send_header("Location", "/report.html" + ("?" + parts.query if parts.query else ""))
+                self.end_headers()
+            elif parts.path == "/api/runs":
+                self.send_json(list_runs(False))
+            elif parts.path == "/api/run":
+                tag, platform = query["tag"][0], query["platform"][0]
+                base, cur, rows = compare_rows(args.baseline, tag, platform)
+                perf = os.path.join(cur, "levelperf.js")
+                level_perf = None
+
+                if os.path.exists(perf):
+                    with open(perf, encoding="utf-8") as f:
+                        level_perf = json.loads(f.read().split("=", 1)[1].strip().rstrip(";"))
+
+                self.send_json({"results": report_data(cur, base, rows, "", os.path.relpath(base, cur).replace("\\", "/") + "/"), "levelPerf": level_perf})
+            else:
+                super().do_GET()
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
+    print(f"smoke report at http://127.0.0.1:{args.port}/ (Ctrl+C stops it)", flush=True)
+
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+
+
+def report_data(cur, base, rows, cur_url, base_url):
+    """The report page's data for the rows, with picture paths under cur_url (the run folder) and base_url (the baseline folder)."""
 
     def frame_time(path):
 
@@ -1256,7 +1419,6 @@ def report(cur, base, rows):
 
         return t if t and t.get("avg") else None
 
-    rel_base = os.path.relpath(base, cur).replace("\\", "/")
     results = []
 
     for rel, pct, problems, excused in rows:
@@ -1265,20 +1427,51 @@ def report(cur, base, rows):
 
         if url.endswith(".png"):
             t = frame_time(os.path.join(cur, rel[:-4] + ".json"))
-            row["baseline"] = f"{rel_base}/{url}" if os.path.exists(os.path.join(base, rel)) else None
-            row["current"] = url if os.path.exists(os.path.join(cur, rel)) else None
-            row["diff"] = f"_diff/{url}" if os.path.exists(os.path.join(cur, "_diff", rel)) else None
+            row["baseline"] = f"{base_url}{url}" if os.path.exists(os.path.join(base, rel)) else None
+            row["current"] = f"{cur_url}{url}" if os.path.exists(os.path.join(cur, rel)) else None
+            row["diff"] = f"{cur_url}_diff/{url}" if os.path.exists(os.path.join(cur, "_diff", rel)) else None
             row["frame_ms"] = t and {"avg": t["avg"], "p99": t["p99"]}
 
         results.append(row)
 
-    data = {"platform": os.path.basename(cur), "tag": os.path.basename(os.path.dirname(cur)), "made": time.strftime("%Y-%m-%d %H:%M"), "rows": results}
+    return {"platform": os.path.basename(cur), "tag": os.path.basename(os.path.dirname(cur)), "made": time.strftime("%Y-%m-%d %H:%M"), "rows": results,
+            "speed": speed_tables(cur, base)}
 
-    with open(os.path.join(cur, "results.js"), "w", encoding="utf-8") as f:
-        f.write("window.SMOKE_RESULTS = " + json.dumps(data) + ";\n")
 
-    for name in ("report.html", "report.css", "report.js"):
-        shutil.copy(os.path.join(HERE, "report", name), os.path.join(cur, name))
+def speed_tables(cur, base):
+    """The perf and memory sections as table rows for the report: each preset's frame rate and each memory run's growth, baseline beside current."""
+
+    def present(folder, name):
+
+        path = os.path.join(folder, name, "perf.json")
+
+        return load_json(path).get("present") if os.path.exists(path) else None
+
+    def memory(folder, name):
+
+        path = os.path.join(folder, name, "memory.json")
+        samples = load_json(path).get("private_bytes") if os.path.exists(path) else None
+
+        return (memory_growth(samples), samples[-1] / 2**20) if samples else None
+
+    names = lambda prefix: sorted({n for f in (cur, base) if os.path.isdir(f) for n in os.listdir(f) if n.startswith(prefix)})
+    perf = []
+    mem = []
+
+    for name in names("perf_"):
+        a = present(base, name)
+        b = present(cur, name)
+        slower = bool(a and b and a.get("avg") and b.get("avg") and b["avg"] > a["avg"] * (1 + PERF_SLOWER))
+        fps = lambda t: round(1000 / t["avg"], 1) if t and t.get("avg") else None
+        perf.append({"name": name, "baseFps": fps(a), "fps": fps(b), "baseP99": a and a.get("p99"), "p99": b and b.get("p99"), "failed": slower or not b})
+
+    for name in names("memory_"):
+        a = memory(base, name)
+        b = memory(cur, name)
+        mem.append({"name": name, "baseGrowth": a and round(a[0], 1), "growth": b and round(b[0], 1), "endMB": b and round(b[1]),
+                    "failed": not b or b[0] > MEMORY_GROWTH_MB})
+
+    return {"perf": perf, "memory": mem, "slowerLimit": PERF_SLOWER, "growthLimit": MEMORY_GROWTH_MB}
 
 
 def main():
@@ -1298,11 +1491,25 @@ def main():
     for p in (r, c):
         p.add_argument("--platforms", default="windows", help="comma list of " + ",".join(PLATFORMS))
 
+    s = sub.add_parser("serve", help="open the report with every run compared live against the baseline")
+    s.add_argument("--baseline", default="baseline")
+    s.add_argument("--port", type=int, default=8642)
+    sub.add_parser("index", help="list the compared runs for the report page opened from disk")
     sub.add_parser("clean", help="delete dumps/smoke")
     args = ap.parse_args()
 
     if args.cmd == "clean":
         shutil.rmtree(OUT, ignore_errors=True)
+
+        return
+
+    if args.cmd == "serve":
+        serve(args)
+
+        return
+
+    if args.cmd == "index":
+        write_index()
 
         return
 
@@ -1325,13 +1532,8 @@ def main():
         else:
             failed += compare(args)
 
-    # The report's platform picker lists every platform of this tag that has a report, not only the ones just compared.
     if args.cmd == "compare":
-        tag_dir = os.path.join(OUT, args.tag)
-        compared = sorted(p for p in os.listdir(tag_dir) if os.path.exists(os.path.join(tag_dir, p, "results.js")))
-
-        with open(os.path.join(tag_dir, "platforms.js"), "w", encoding="utf-8") as f:
-            f.write("window.SMOKE_PLATFORMS = " + json.dumps(compared) + ";\n")
+        write_index()
 
     sys.exit(1 if failed else 0)
 

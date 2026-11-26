@@ -46,6 +46,8 @@ header select, #toolbar select { padding: 4px 6px; background: var(--control); c
 #perf td { padding: 3px 8px; text-align: right; border-bottom: 1px solid var(--line); }
 #perf th:first-child, #perf td:first-child { text-align: left; }
 #perf tbody tr:hover { background: var(--row-hover); }
+#perf tr.bad td { color: var(--bad); }
+#perf h2 + table { margin-bottom: 12px; }
 #toolbar { display: flex; align-items: center; gap: 12px; padding: 12px 16px; }
 #toolbar label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 #shown { color: var(--dim); }
