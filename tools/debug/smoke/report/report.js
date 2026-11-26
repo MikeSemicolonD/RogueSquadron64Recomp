@@ -1,12 +1,20 @@
-// Smoke report: builds the page from window.SMOKE_RESULTS (results.js, written by smoke.py compare next to a copy of this page).
-// Each row is {name, pct, problems, baseline?, current?, diff?, frame_ms?}; a row with problems failed.
+// Smoke report: shows one run of dumps/smoke. Served by `smoke.py serve` it asks the server, which compares the run when asked; opened from disk it reads
+// dumps/smoke/index.js and the run's results.js and levelperf.js, which `smoke.py compare` and run-level-perf.ps1 write.
+// Each row is {name, pct, problems, known, baseline?, current?, diff?, frame_ms?}; a row with problems failed, one with only known problems
+// (each {problem, reason}, explained by the manifest's [[known]] entries) did not.
 
-const data = window.SMOKE_RESULTS;
+let data = null;
 const $ = (id) => document.getElementById(id);
+const live = location.protocol.startsWith('http');
+const DUMPS = '../../../../dumps/smoke/';
+
+// Row picture paths are relative to the run's folder.
+let runFolder = '';
 const state = { section: null };
 
 const sectionOf = (row) => (row.name.match(/^[a-z]+/) || ['other'])[0];
 const failed = (row) => row.problems.length > 0;
+const knownOnly = (row) => !failed(row) && (row.known || []).length > 0;
 
 // Failures first; among them the ones with no pixel figure (frame rate, memory, camera, missing), then the most pixels changed.
 function byChange(a, b)
@@ -33,7 +41,7 @@ function el(tag, props, ...children)
 }
 
 // Folder names can hold '#' (menu_options__showroom__#0), which a URL would read as a fragment.
-const url = (path) => path.split('/').map(encodeURIComponent).join('/');
+const url = (path) => (runFolder + path).split('/').map(encodeURIComponent).join('/');
 
 // A row's pictures as [label, path] for the ones it has.
 const pictures = (row) => [
@@ -219,7 +227,10 @@ function setupViewer()
 function rowView(row)
 {
   const bad = failed(row);
-  const head = el('div', { className: 'rowHead' }, el('span', { className: 'status', textContent: bad ? 'FAIL' : 'ok' }), el('b', { textContent: row.name }));
+  const known = row.known || [];
+  const isNew = known.some((k) => k.problem === 'new, not in the baseline');
+  const status = bad ? 'FAIL' : isNew ? 'new' : known.length ? 'known' : 'ok';
+  const head = el('div', { className: 'rowHead' }, el('span', { className: 'status', textContent: status }), el('b', { textContent: row.name }));
 
   if (row.pct !== null)
     head.append(el('span', { className: 'pct', textContent: `${row.pct.toFixed(3)}% of pixels changed` }));
@@ -227,10 +238,13 @@ function rowView(row)
   if (row.frame_ms)
     head.append(el('span', { className: 'fps', textContent: `${(1000 / row.frame_ms.avg).toFixed(0)} fps, p99 ${row.frame_ms.p99.toFixed(1)} ms` }));
 
-  const view = el('article', { className: bad ? 'row fail' : 'row' }, head);
+  const view = el('article', { className: bad ? 'row fail' : known.length ? 'row known' : 'row' }, head);
 
   if (bad)
     view.append(el('div', { className: 'problems', textContent: row.problems.join('; ') }));
+
+  for (const k of known)
+    view.append(el('div', { className: 'knownNote', textContent: isNew ? `${k.reason}.` : `Known: ${k.problem}. ${k.reason}` }));
 
   const shots = pictures(row).map(([label, path]) => shot(row, label, path));
 
@@ -242,6 +256,9 @@ function rowView(row)
 
 // The level performance table from run-level-perf.ps1 opens as its own card next to the smoke sections.
 const PERF_CARD = 'levelperf';
+
+// The perf and memory sections as tables (data.speed), next to the level performance card.
+const SPEED_CARD = 'speed';
 
 function card(key, label, detail, failedPart)
 {
@@ -267,15 +284,27 @@ function sectionsView()
 
   for (const row of data ? data.rows : [])
   {
-    const c = counts.get(sectionOf(row)) || { total: 0, failed: 0 };
+    const c = counts.get(sectionOf(row)) || { total: 0, failed: 0, known: 0 };
 
     c.total++;
     c.failed += failed(row) ? 1 : 0;
+    c.known += knownOnly(row) ? 1 : 0;
     counts.set(sectionOf(row), c);
   }
 
-  const cards = [...counts].sort((a, b) => b[1].failed - a[1].failed || a[0].localeCompare(b[0])).map(([name, c]) => card(name, name, `${c.failed} of ${c.total} failed`, c.failed / c.total));
+  const detail = (c) => `${c.failed} of ${c.total} failed` + (c.known ? `, ${c.known} known` : '');
+  const cards = [...counts].sort((a, b) => b[1].failed - a[1].failed || a[0].localeCompare(b[0])).map(([name, c]) => card(name, name, detail(c), c.failed / c.total));
   const perf = window.LEVEL_PERF;
+
+  const speed = data && data.speed;
+  const speedRows = speed ? [...speed.perf, ...speed.memory] : [];
+
+  if (speedRows.length)
+  {
+    const bad = speedRows.filter((r) => r.failed).length;
+
+    cards.push(card(SPEED_CARD, 'Frame rate & memory', `${bad} of ${speedRows.length} failed`, bad / speedRows.length));
+  }
 
   if (perf)
   {
@@ -287,7 +316,7 @@ function sectionsView()
 
 function render()
 {
-  const perfOpen = state.section === PERF_CARD;
+  const perfOpen = state.section === PERF_CARD || state.section === SPEED_CARD;
 
   sectionsView();
   $('perf').hidden = !perfOpen;
@@ -296,7 +325,10 @@ function render()
 
   if (perfOpen)
   {
-    perfView();
+    if (state.section === SPEED_CARD)
+      speedView();
+    else
+      perfView();
 
     return;
   }
@@ -357,6 +389,47 @@ function perfView()
   $('perf').replaceChildren(el('h2', { textContent: 'Level performance' }), el('small', { textContent: note }), el('table', {}, el('thead', {}, el('tr', {}, ...head)), el('tbody', {}, ...body)));
 }
 
+// The perf section (one row per level and video preset) and the memory section, each beside the baseline; a header's title says what the column means.
+function speedTable(columns, rows)
+{
+  const head = columns.map(([label, meaning]) => el('th', { textContent: label, title: meaning }));
+  const body = rows.map((r) => el('tr', { className: r.failed ? 'bad' : '' }, ...columns.map(([, , text]) => el('td', { textContent: text(r) }))));
+
+  return el('table', {}, el('thead', {}, el('tr', {}, ...head)), el('tbody', {}, ...body));
+}
+
+function speedView()
+{
+  const s = data.speed;
+  const num = (v, digits) => (v === null || v === undefined ? '-' : v.toFixed(digits));
+  const status = (r) => (r.failed ? 'FAIL' : 'ok');
+  const change = (r) => (r.baseFps && r.fps ? `${((r.baseFps / r.fps - 1) * 100).toFixed(0)}%` : '-');
+
+  const perfColumns = [
+    ['Target', 'The level and video preset played at real speed', (r) => r.name.replace(/^perf_/, '')],
+    ['Baseline fps', 'Average frames shown per second in the baseline run', (r) => num(r.baseFps, 0)],
+    ['fps', 'Average frames shown per second in this run', (r) => num(r.fps, 0)],
+    ['Frame time', `Change in average frame time; over +${s.slowerLimit * 100}% fails`, change],
+    ['p99 ms', 'Baseline and current 99th-percentile frame time: the slowest frames', (r) => `${num(r.baseP99, 1)} → ${num(r.p99, 1)}`],
+    ['', 'Whether this target passed', status]
+  ];
+
+  const memoryColumns = [
+    ['Target', 'The level replayed several times in one launch', (r) => r.name.replace(/^memory_/, '')],
+    ['Baseline MB/loop', 'Median memory growth per replay in the baseline run', (r) => num(r.baseGrowth, 1)],
+    ['MB/loop', `Median memory growth per replay in this run; over ${s.growthLimit} MB fails`, (r) => num(r.growth, 1)],
+    ['End MB', 'Memory in use (private bytes) after the last replay', (r) => num(r.endMB, 0)],
+    ['', 'Whether this target passed', status]
+  ];
+
+  $('perf').replaceChildren(
+    el('h2', { textContent: 'Frame rate' }),
+    speedTable(perfColumns, s.perf),
+    el('h2', { textContent: 'Memory' }),
+    speedTable(memoryColumns, s.memory)
+  );
+}
+
 $('themeBtn').onclick = () => {
   const now = document.documentElement.dataset.theme ?? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
 
@@ -370,30 +443,97 @@ $('themeBtn').onclick = () => {
   }
 };
 
-// Every platform compared in this run (../platforms.js); the picker opens that platform's own report.
-const platforms = window.SMOKE_PLATFORMS || (data ? [data.platform] : []);
-
-if (data)
+// A script from disk, where fetch can't read files; a missing one leaves its global unset.
+function loadScript(src)
 {
-  $('platform').replaceChildren(...platforms.map((p) => el('option', { value: p, textContent: p, selected: p === data.platform })));
-  $('platform').onchange = (e) => location.assign(`../${encodeURIComponent(e.target.value)}/report.html`);
+  return new Promise((done) => {
+    const s = el('script', { src: `${src}?v=${Date.now()}` });
+
+    s.onload = done;
+    s.onerror = done;
+    document.head.append(s);
+  });
+}
+
+async function loadRuns()
+{
+  if (live)
+    return (await fetch('/api/runs')).json();
+
+  await loadScript(`${DUMPS}index.js`);
+
+  return window.SMOKE_RUNS || [];
+}
+
+// The run's results and level performance table as [results, levelPerf], either possibly null.
+async function loadRun(run)
+{
+  const folder = `${run.tag}/${run.platform}/`;
+
+  if (live)
+  {
+    runFolder = `/runs/${folder}`;
+    const answer = await (await fetch(`/api/run?tag=${encodeURIComponent(run.tag)}&platform=${encodeURIComponent(run.platform)}`)).json();
+
+    return [answer.results, answer.levelPerf];
+  }
+
+  runFolder = DUMPS + folder;
+  await loadScript(`${runFolder}results.js`);
+  await loadScript(`${runFolder}levelperf.js`);
+
+  return [window.SMOKE_RESULTS || null, window.LEVEL_PERF || null];
+}
+
+// ?run=<tag>/<platform> picks the run; without it, current/windows when there is one.
+async function start()
+{
+  setupViewer();
+  $('sort').onchange = render;
+  $('failedOnly').onchange = render;
+
+  const runs = await loadRuns();
+  const key = (r) => `${r.tag}/${r.platform}`;
+  const asked = new URLSearchParams(location.search).get('run');
+  const run = runs.find((r) => key(r) === asked) || runs.find((r) => key(r) === 'current/windows') || runs[0];
+
+  if (!run)
+  {
+    $('empty').hidden = false;
+    render();
+
+    return;
+  }
+
+  $('platform').replaceChildren(...runs.map((r) => el('option', { value: key(r), textContent: `${r.tag} / ${r.platform}`, selected: r === run })));
+  $('platform').onchange = (e) => location.assign(`?run=${encodeURIComponent(e.target.value)}`);
   $('platform').hidden = false;
+  $('summary').textContent = live ? 'Comparing…' : '';
+
+  const [results, levelPerf] = await loadRun(run);
+
+  data = results;
+  window.LEVEL_PERF = levelPerf;
+
+  if (data)
+  {
+    const bad = data.rows.filter(failed).length;
+
+    $('summary').textContent = `${bad} of ${data.rows.length} failed`;
+    $('made').textContent = `${data.tag} / ${data.platform}, compared ${live ? 'live' : data.made}`;
+  }
+  else if (levelPerf)
+  {
+    $('summary').textContent = '';
+    state.section = PERF_CARD;
+  }
+  else
+  {
+    $('summary').textContent = '';
+    $('empty').hidden = false;
+  }
+
+  render();
 }
 
-setupViewer();
-$('sort').onchange = render;
-$('failedOnly').onchange = render;
-
-if (data)
-{
-  const bad = data.rows.filter(failed).length;
-
-  $('summary').textContent = `${bad} of ${data.rows.length} failed`;
-  $('made').textContent = `${data.tag} / ${data.platform}, compared ${data.made}`;
-}
-else if (window.LEVEL_PERF)
-  state.section = PERF_CARD;
-else
-  $('empty').hidden = false;
-
-render();
+start();

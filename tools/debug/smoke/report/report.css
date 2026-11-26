@@ -46,6 +46,8 @@ header select, #toolbar select { padding: 4px 6px; background: var(--control); c
 #perf td { padding: 3px 8px; text-align: right; border-bottom: 1px solid var(--line); }
 #perf th:first-child, #perf td:first-child { text-align: left; }
 #perf tbody tr:hover { background: var(--row-hover); }
+#perf tr.bad td { color: var(--bad); }
+#perf h2 + table { margin-bottom: 12px; }
 #toolbar { display: flex; align-items: center; gap: 12px; padding: 12px 16px; }
 #toolbar label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 #shown { color: var(--dim); }
@@ -58,6 +60,9 @@ header select, #toolbar select { padding: 4px 6px; background: var(--control); c
 .fail .status { color: var(--bad); }
 .pct, .fps { color: var(--dim); }
 .problems { margin-top: 2px; color: var(--bad); }
+.row.known { border-left-color: var(--accent); }
+.known .status { color: var(--accent); }
+.knownNote { margin-top: 2px; color: var(--dim); }
 .shots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
 .shots figure { margin: 0; }
 .shots figcaption { color: var(--dim); font-size: 11px; }

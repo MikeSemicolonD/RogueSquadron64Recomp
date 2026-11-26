@@ -384,7 +384,7 @@
             },
             "dependsOn": "Build: RogueSquadron64Recomp (Release, MCP)",
             "problemMatcher": [],
-            "detail": "Builds Release, then plays every level with its pause settings, the menus, pause pages, setting changes, cutscenes and video presets in tools/debug/smoke/manifest.toml and compares them with the baseline (1-1.5 h). The report is dumps/smoke/current/windows/report.html."
+            "detail": "Builds Release, then plays every level with its pause settings, the menus, pause pages, setting changes, cutscenes and video presets in tools/debug/smoke/manifest.toml and compares them with the baseline (1-1.5 h). The report is tools/debug/smoke/report/report.html."
         },
         {
             "label": "Test: Smoke test baseline",

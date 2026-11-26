@@ -195,6 +195,8 @@ static LONG WINAPI crash_handler(EXCEPTION_POINTERS* ep)
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
+#if defined(_M_X64)
+
 // Functions LiveRecomp regenerates for mod hooks register no unwind info, so Windows cannot dispatch a fault there to any SEH
 // handler or to crash_handler and the process ends without a report. A vectored handler runs before that dispatch.
 static LONG WINAPI unwindless_fault_handler(EXCEPTION_POINTERS* ep)
@@ -260,6 +262,8 @@ static LONG WINAPI unwindless_fault_handler(EXCEPTION_POINTERS* ep)
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
+#endif
+
 void install_exception_filter() {
     SetUnhandledExceptionFilter(crash_handler);
 }
@@ -268,7 +272,11 @@ void install_handlers()
 {
 
     SetUnhandledExceptionFilter(crash_handler);
+
+    // x86 SEH is frame-based, so faults in code without unwind info still reach crash_handler.
+#if defined(_M_X64)
     AddVectoredExceptionHandler(0, unwindless_fault_handler);
+#endif
 
     // Pinpoints uncaught C++ throws (notably ultramodern::thread_terminated, which
     // must be caught in _thread_func/entrypoint but escapes on any thread lacking

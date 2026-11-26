@@ -14,7 +14,7 @@
   <h1>Smoke report</h1>
   <span id="summary"></span>
   <span id="made"></span>
-  <select id="platform" aria-label="Platform" title="Show another platform's results" hidden></select>
+  <select id="platform" aria-label="Run" title="Show another run" hidden></select>
   <button id="themeBtn" title="Switch between the dark and light theme" aria-label="Switch between the dark and light theme">&#9681;</button>
 </header>
 <section id="sections"></section>
@@ -47,7 +47,7 @@
     <div id="vSplitBar" hidden><span>Baseline</span><input type="range" id="vSplit" min="0" max="100" value="50" aria-label="Split between baseline and current"><span>Current</span></div>
   </div>
 </div>
-<p id="empty" hidden>No smoke results next to this page. Run <code>smoke.py compare</code> to make them.</p>
-<script>document.write(`<script src="../platforms.js?v=${Date.now()}"><\/script><script src="results.js?v=${Date.now()}"><\/script><script src="levelperf.js?v=${Date.now()}"><\/script><script src="report.js?v=${Date.now()}"><\/script>`);</script>
+<p id="empty" hidden>No smoke runs found. Run <code>smoke.py compare</code>, or open the page with <code>smoke.py serve</code>.</p>
+<script src="report.js"></script>
 </body>
 </html>

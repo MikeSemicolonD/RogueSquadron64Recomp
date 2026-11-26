@@ -486,7 +486,13 @@ static LONG CALLBACK rs64_wt_veh(EXCEPTION_POINTERS* ep)
     {
         const unsigned i = s_wt_nhits.fetch_add(1);
 
-        s_wt_hits[i & 255] = { (uint32_t)(target - s_wt_lo), GetCurrentThreadId(), (uint64_t)ep->ContextRecord->Rip, 0 };
+#if defined(_M_IX86)
+        const uint64_t pc = ep->ContextRecord->Eip;
+#else
+        const uint64_t pc = ep->ContextRecord->Rip;
+#endif
+
+        s_wt_hits[i & 255] = { (uint32_t)(target - s_wt_lo), GetCurrentThreadId(), pc, 0 };
     }
 
     DWORD old = 0;

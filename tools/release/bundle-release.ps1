@@ -25,7 +25,7 @@ if (Test-Path $shaderCache) { Remove-Item -Recurse -Force $shaderCache }
 function Invoke-Checked([string]$what, [scriptblock]$block) {
     # Windows PowerShell turns native stderr (progress, warnings) into errors under Stop, so only the exit code decides; Out-Host keeps tool output out of callers' return values.
     $ErrorActionPreference = "Continue"
-    & $block 2>&1 | Out-Host
+    & $block 2>&1 | ForEach-Object { "$_" } | Out-Host
     if ($LASTEXITCODE -ne 0) { throw "$what failed (exit $LASTEXITCODE)" }
 }
 
