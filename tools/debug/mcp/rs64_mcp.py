@@ -595,7 +595,13 @@ class Game:
             s.bind(("127.0.0.1", 0))
             self.port = s.getsockname()[1]
 
-        game_env = {"ROGUESQ_HLE_DEV_MODE": "1", "ROGUESQ_VIDEO_CONFIG": self.game_path(video_cfg)}
+        game_env = {"ROGUESQ_VIDEO_CONFIG": self.game_path(video_cfg)}
+        # RT64 developer mode backs the draw inspection tools; a Raspberry Pi runs without it, as it can't afford the cost.
+        pi = (platform == "ssh") and ("Raspberry Pi" in self.ssh("cat /proc/device-tree/model 2>/dev/null").stdout.decode("utf-8", "replace"))
+
+        if not pi:
+            game_env["ROGUESQ_HLE_DEV_MODE"] = "1"
+
         # Game time steps one frame per frame, so a cutscene, menu or mission frame number is the same picture on every launch; env ROGUESQ_FIXED_STEP=0 plays on real time.
         game_env["ROGUESQ_FIXED_STEP"] = "1"
         if platform == "windows" and os.path.isfile(RENDERDOC_DLL):
