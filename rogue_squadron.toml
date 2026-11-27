@@ -2181,6 +2181,12 @@ text = '{ if (rs64_th_npcAtStUpdate_entry(rdram, ctx)) return; }'
 func = "spawnPlayerAtStCannonFire"
 text = '{ if (rs64_th_spawnPlayerAtStCannonFire_entry(rdram, ctx)) return; }'
 
+# A DAT record's unit spawns (a0 = the record), at level load or from grid streaming: co-op keeps the grid from spawning its own puppet's record, which the puppet's destroy queues again.
+# hook: RS64_HOOK_DAT_SPAWN
+[[patches.hook]]
+func = "setupNpcUpdateFunctions"
+text = '{ if (rs64_th_setupNpcUpdateFunctions_entry(rdram, ctx)) return; }'
+
 # The Y-wing (spawnTexturedExplosionBurst, its weapon tick) and the snowspeeder (tickCinematicEffectObject) fire mid-function: $v1 = the fire buttons once the cooldown is done, cleared when a fire handler skips the shot.
 [[patches.hook]]
 func = "spawnTexturedExplosionBurst"

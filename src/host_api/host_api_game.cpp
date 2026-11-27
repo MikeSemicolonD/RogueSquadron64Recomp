@@ -477,6 +477,7 @@ bool hook_site_is_entry(uint32_t hook) {
     case RS64_HOOK_PLAYER_FIRE:
     case RS64_HOOK_NPC_ATST_TICK:
     case RS64_HOOK_ATST_FIRE:
+    case RS64_HOOK_DAT_SPAWN:
         return true;
     default:
         return false;

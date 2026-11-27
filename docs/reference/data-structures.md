@@ -758,7 +758,7 @@ Pool header = 4 section offsets (0=SoundMacros, 1=Keymaps, 3=Layers); each subse
 
 - **Slot dispatch**: `cinematicSlotBatchDispatch` (0x800A70E4) calls `slotDispatcherIter` (0x8003E8DC)
   over the slot table @0x80130BB0 (`gNpcSlotList`). Slot entry (8B): handler-node ptr@+0x00,
-  next-index@+0x04, group id@+0x06. Handler-node = the actor/effect object: handler fn@+0x00, flags@
+  prev-index@+0x04, next-index@+0x06 (`destroyNpcSlotByIndex` 0x8003ED74 unlinks through both, `destroyTransientNpcSlots` walks +0x06). Handler-node = the actor/effect object: handler fn@+0x00, flags@
   +0x14 (bit3 = skip/destroy-after), reentrancy byte@+0x1A. Confirmed funcs_8.c:12064-12277.
 - **Type-1 particle/billboard sub-struct** (actor base, type byte@+0x112): pos vec3@+0xD8/+0xDC/+0xE0,
   source/anim ptr@+0x0C, model-frame ptr@+0x10, initial scale@+0x24, age-increment (1/lifetime)@+0x2C,

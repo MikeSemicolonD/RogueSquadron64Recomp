@@ -64,6 +64,7 @@ void rs64_ghost_puppet_spawned(void);
 void rs64_imposter_despawn(uint8_t* rdram, recomp_context* ctx);
 bool rs64_imposter_kill(uint8_t* rdram, recomp_context* ctx);
 uint32_t rs64_imposter_npc(void);
+uint32_t rs64_imposter_slot(void);
 void rs64_ghost_tow_draw(uint8_t* rdram, recomp_context* ctx);
 void rs64_ghost_tow_load(uint8_t* rdram, recomp_context* ctx);
 void rs64_ghost_tow_release(uint8_t* rdram, recomp_context* ctx);

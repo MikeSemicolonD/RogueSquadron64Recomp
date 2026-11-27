@@ -17,6 +17,9 @@ struct Imposter {
     uint32_t ctx = 0;
     uint32_t blk = 0;
 
+    // The NPC slot it spawned in. Grid streaming can spawn another NPC from the same record and overwrite the record's slot field (+6), so it is never read back from there.
+    uint32_t slot = 0xFFFFu;
+
     // The wingman model the imposter spawned with (0 = X-wing, the only one with S-foil nodes).
     int model = -1;
 
@@ -229,6 +232,7 @@ extern "C" void rs64_imposter_frame(uint8_t* rdram, recomp_context* ctx)
     }
 
     rdram[(npc + 0x1A - 0x80000000u) ^ 3] += 1;
+    s.slot = slot;
     ww(rdram, kImposterRec + 0xE0, blk);
     ww(rdram, kImposterRec + 0xE4, npc);
 
@@ -257,7 +261,7 @@ extern "C" void rs64_imposter_frame(uint8_t* rdram, recomp_context* ctx)
     }
 }
 
-// Drops the spawn's reference before the mission's slots are torn down; destroyNpcContextArrays spins until every slot is free, and nothing else releases a record outside the level's DAT list.
+// The spawn pins its context by holding the re-entrancy counter (+0x1A) above 0, the game's own guard while a handler runs, so the game cannot destroy it. The pin must go before the mission's slots are torn down: destroyNpcContextArrays spins until every slot is free.
 extern "C" void rs64_imposter_release(uint8_t* rdram, recomp_context* ctx)
 {
 
@@ -274,10 +278,10 @@ extern "C" void rs64_imposter_release(uint8_t* rdram, recomp_context* ctx)
         return;
     }
 
-    const uint32_t slot = rh(rdram, kImposterRec + 0x6);
+    const uint32_t slot = s.slot;
     const uint32_t table = rw(rdram, 0x80130BB0u);
 
-    if (slot != 0xFFFFu && rw(rdram, table + slot * 8) == s.ctx) {
+    if (slot < kNpcSlots && rw(rdram, table + slot * 8) == s.ctx) {
         uint8_t& refs = rdram[(s.ctx + 0x1A - 0x80000000u) ^ 3];
 
         if (refs > 0) {
@@ -296,6 +300,13 @@ extern "C" uint32_t rs64_imposter_npc(void) {
     return s.spawned ? s.ctx : 0u;
 }
 
+// The imposter's NPC slot, 0xFFFF while none is spawned.
+extern "C" uint32_t rs64_imposter_slot(void) {
+
+    const Imposter& s = imp();
+    return s.spawned && s.ctx != 0 ? s.slot : 0xFFFFu;
+}
+
 // The other player went down: a lethal HIT (action 5, weapon 7, as mirrored damage sends) through the puppet's own handler, so the game plays its death. False when there is no live slot to hit.
 extern "C" bool rs64_imposter_kill(uint8_t* rdram, recomp_context* ctx)
 {
@@ -308,7 +319,7 @@ extern "C" bool rs64_imposter_kill(uint8_t* rdram, recomp_context* ctx)
         return false;
     }
 
-    const uint32_t slot = rh(rdram, kImposterRec + 0x6);
+    const uint32_t slot = s.slot;
     const uint32_t table = rw(rdram, 0x80130BB0u);
 
     if (slot >= kNpcSlots || rw(rdram, table + slot * 8) != s.ctx)
@@ -332,7 +343,7 @@ extern "C" void rs64_imposter_despawn(uint8_t* rdram, recomp_context* ctx)
         return;
     }
 
-    const uint32_t slot = rh(rdram, kImposterRec + 0x6);
+    const uint32_t slot = s.slot;
     const uint32_t table = rw(rdram, 0x80130BB0u);
 
     if (slot < kNpcSlots && rw(rdram, table + slot * 8) == s.ctx) {
@@ -458,8 +469,7 @@ extern "C" void rs64_imposter_tick(uint8_t* rdram, recomp_context* ctx)
 
     if (imposter_fire(in.fire, &cd))
     {
-        const uint32_t slot = rh(rdram, kImposterRec + 0x6);
-        rs64::mp::call(rdram, ctx, 0x8005E3B0u, {0u, slot, blk, 0x80109730u}, {1u, rw(rdram, 0x800A5918u), 0x3F800000u});
+        rs64::mp::call(rdram, ctx, 0x8005E3B0u, {0u, s.slot, blk, 0x80109730u}, {1u, rw(rdram, 0x800A5918u), 0x3F800000u});
     }
 
     rdram[(kImposterRec + 0xF2 - 0x80000000u) ^ 3] = (uint8_t)(cd >> 8);
@@ -557,7 +567,7 @@ extern "C" bool rs64_imposter_atst_tick(uint8_t* rdram, recomp_context* ctx)
 
             const uint32_t radius = rw(rdram, blk + 0x50);
             const uint16_t owner = rh(rdram, blk + 0x72);
-            wh(rdram, blk + 0x72, rh(rdram, kImposterRec + 0x6));
+            wh(rdram, blk + 0x72, (uint16_t)s.slot);
             rs64::mp::call(rdram, ctx, 0x800D1248u, {blk, gun});
             ww(rdram, blk + 0x50, radius);
             wh(rdram, blk + 0x72, owner);

@@ -448,7 +448,7 @@ extern "C" void rs64_ghost_npc_hit(uint8_t* rdram, recomp_context* ctx)
     const uint32_t target = (uint32_t)ctx->r4 & 0xFFFFu;
 
     // A walker player is an NPC too: the other player's friendly fire on it arrives as their HIT message, not from this copy.
-    if (rh(rdram, msg + 2) == rh(rdram, kImposterRec + 0x6) && (target == rh(rdram, 0x80137DBAu) || slot_mirrored(rdram, target)))
+    if (rh(rdram, msg + 2) == rs64_imposter_slot() &&(target == rh(rdram, 0x80137DBAu) || slot_mirrored(rdram, target)))
     {
         rs64::mips::wh(rdram, msg + 6, 0);
         return;
@@ -459,7 +459,7 @@ extern "C" void rs64_ghost_npc_hit(uint8_t* rdram, recomp_context* ctx)
         return;
     }
 
-    const bool on_partner = target == rh(rdram, kImposterRec + 0x6);
+    const bool on_partner = target == rs64_imposter_slot();
 
     if (on_partner && rh(rdram, msg + 2) == rh(rdram, 0x80137DBAu)) {
         s.link.send(rs64::net::encode_hit(mission_tag(), rh(rdram, msg + 6)), true);

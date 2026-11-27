@@ -99,6 +99,15 @@ Unit tests (`cmake --build build --config Release --target rs64_unit_tests` buil
 
 `ROGUESQ_MP=host|join` is the scripted path: the handshake starts at the first mission and `tools/debug/lockstep/run-mp.ps1` drives a pair of instances. `run-mp.ps1 -Lobby` drives the real menus instead (`ROGUESQ_BOOT_TARGET=lobby:host|join`). Once the menus complete a handshake, ghost mode stays on for later missions without `ROGUESQ_MP`.
 
+`tools/debug/lockstep/run-mp-levels.ps1` runs a pair on each level's solo recording, both sides flying it, and passes a level when both sides' mission ends reach a front-end screen:
+
+- `-Mode sweep`: both sides invincible (the invincibility mod, `run-mp.ps1 -HostInvincible -ClientInvincible`), and the host ends the mission when its recording runs out. A recording drifts once the other player's craft is in the world, so this checks mission start to the next screen on every level.
+- `-Mode deaths`: the client is shot down three times, so the host's puppet dies and respawns, then the host fails the mission.
+
+`run-mp.ps1` dumps a side whose mission end reaches no front-end screen in `-EndHang` seconds (60) and exits 2.
+
+The puppet's destroy queues its DAT record for grid streaming again (`parseDatItemCommon`). A spawn from that record would put an AI wingman where the puppet died and overwrite the record's slot field, so the mod refuses the record at `RS64_HOOK_DAT_SPAWN`. The mod also keeps the puppet's NPC slot from its spawn instead of reading it back from the record.
+
 ## Lobby flow
 
 The lobby is the MULTIPLAYER entry added to the main menu by [mods/multiplayer-native/roguesq_menu.json](../../mods/multiplayer-native/roguesq_menu.json): MAIN MENU, MULTIPLAYER, pilot select, then a page with HOST GAME and JOIN GAME. The lobby owns the link. `Lobby` (`net/lobby.cpp`) tracks Idle / Hosting / Joining / Connected / Failed: a join gives up after 15 s (COULD NOT CONNECT TO HOST; at once, with the transport's reason, when the link or relay reports it cannot connect), a connected peer must say HELLO within 5 s, and a HELLO with a different `kBuildId` fails a client (VERSION MISMATCH). A host disconnects a peer that fails any of this (`Lobby::take_kick`, `Link::kick`, the version 3 transport table's `kick`) and keeps waiting, as it does when its player leaves. The status line is menu-font-safe text (uppercase, digits, spaces). `rs64_lobby_status` (`ghost_lobby.cpp`, run each front-end frame by `rs64_lobby_tick`) builds the status text and publishes the lobby state as the `mp_lobby_state` flag; the nav sequencer reads that flag, not the text.

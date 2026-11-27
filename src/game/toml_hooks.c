@@ -2239,6 +2239,12 @@ int rs64_th_spawnPlayerAtStCannonFire_entry(uint8_t* rdram, recomp_context* ctx)
     return rs64_hook(RS64_HOOK_ATST_FIRE, rdram, ctx);
 }
 
+// setupNpcUpdateFunctions entry: a DAT record's unit spawns
+int rs64_th_setupNpcUpdateFunctions_entry(uint8_t* rdram, recomp_context* ctx)
+{
+    return rs64_hook(RS64_HOOK_DAT_SPAWN, rdram, ctx);
+}
+
 // A fire check inside a craft's weapon tick ($v1 = the fire buttons): the fire handlers see a0 = the weapon context, a1 = the hardpoint, on a copy of the registers; a skip clears $v1.
 static void rs64_fire_gate(uint8_t* rdram, recomp_context* ctx, uint32_t weapon, uint32_t hardpoint)
 {
