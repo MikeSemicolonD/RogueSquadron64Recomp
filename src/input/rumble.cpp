@@ -13,6 +13,8 @@
 #include "input/input_host.h"
 #include "game/game_state.h"
 
+extern "C" int rs64_ls_replaying(void);
+
 #if defined(RS64_OPENXR)
 #include "video/vr_openxr.h"
 #endif
@@ -385,22 +387,20 @@ static void lightbar_tick(const rs64::input::LightbarConfig& cfg, const char* st
     }
 }
 
-// Caller holds g_bindings_mtx (or the process is going down). heavy: bit 0 right trigger, bit 1 left; force 0 clears both.
+// Caller holds g_bindings_mtx (or the process is going down). A force of 0 clears that trigger.
 // Returns the number of pads the effect was queued for.
-static int send_trigger_feel(uint32_t heavy, uint8_t force)
+static int send_trigger_feel(uint8_t right, uint8_t left)
 {
-
-    if (!force) heavy = 0;
 
     // SDL's DS5EffectsState_t: enable bits 0x04/0x08 = right/left trigger effect at bytes 10 and 21. Mode 0x01 is constant
     // resistance (start position, force) that can still be pulled through; mode 0x05 clears it.
     uint8_t fx[47] = {};
 
     fx[0] = 0x04 | 0x08;
-    fx[10] = (heavy & 1u) ? 0x01 : 0x05;
-    fx[12] = (heavy & 1u) ? force : 0x00;
-    fx[21] = (heavy & 2u) ? 0x01 : 0x05;
-    fx[23] = (heavy & 2u) ? force : 0x00;
+    fx[10] = right ? 0x01 : 0x05;
+    fx[12] = right;
+    fx[21] = left ? 0x01 : 0x05;
+    fx[23] = left;
 
     int sent = 0;
 
@@ -413,9 +413,12 @@ static int send_trigger_feel(uint32_t heavy, uint8_t force)
 }
 
 // DualSense adaptive triggers: heavy thrust until the craft is at max speed, heavy brake while it is above cruise. Off once the craft's speed update stops (pause, menus, cutscenes).
-static void trigger_feel_tick()
+// Each trigger's resistance ramps to its target over kRampS instead of switching.
+static void trigger_feel_tick(float dt)
 {
 
+    static constexpr float kRampS = 0.4f;
+    static float s_level[2] = {0.0f, 0.0f};
     static uint32_t s_sent = ~0u;
     static auto s_sent_t = std::chrono::steady_clock::now();
     const auto now = std::chrono::steady_clock::now();
@@ -443,14 +446,24 @@ static void trigger_feel_tick()
     };
 
     const uint32_t heavy = ((feel & role(SDL_CONTROLLER_AXIS_TRIGGERRIGHT)) ? 1u : 0u) | ((feel & role(SDL_CONTROLLER_AXIS_TRIGGERLEFT)) ? 2u : 0u);
-    const uint8_t force = (uint8_t)std::lround(std::clamp(g_bindings.trigger_resistance, 0.0f, 1.0f) * 255.0f);
-    const uint32_t sent = force ? (heavy | (uint32_t)force << 8) : 0u;
+    const float force = std::clamp(g_bindings.trigger_resistance, 0.0f, 1.0f) * 255.0f;
+    uint8_t out[2];
+
+    for (int t = 0; t < 2; ++t) {
+        const float target = (heavy & (1u << t)) ? force : 0.0f;
+        const float step = 255.0f * dt / kRampS;
+
+        s_level[t] = target > s_level[t] ? std::min(target, s_level[t] + step) : std::max(target, s_level[t] - step);
+        out[t] = (uint8_t)std::lround(s_level[t]);
+    }
+
+    const uint32_t sent = out[0] | (uint32_t)out[1] << 8;
 
     if (s_pad_effects_released.load() || (sent == s_sent && now - s_sent_t < std::chrono::seconds(1))) return;
 
     s_sent = sent;
     s_sent_t = now;
-    send_trigger_feel(heavy, force);
+    send_trigger_feel(out[0], out[1]);
 }
 
 // The pad keeps its trigger effect and lightbar color after the process ends, so quit and crash paths reset them (the
@@ -467,7 +480,7 @@ void release_pad_effects()
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
-    int sent = send_trigger_feel(0, 0);
+    int sent = send_trigger_feel(0u, 0u);
 
     for (SDL_GameController* p : g_pads)
     {
@@ -483,6 +496,9 @@ void release_pad_effects()
 
 // Converts the game's Rumble Pak motor pulses (plus the damage/death-spiral layers) into device rumble at ~60 Hz, and drives the lightbar.
 void rumble_thread_main() {
+
+    // A game whose input comes from a recording (a replay, or a co-op test pad) leaves the real pad alone: no rumble, trigger resistance or lightbar.
+    if (rs64_ls_replaying() || recomp::dbg::env_str("ROGUESQ_MP_PAD")) return;
 
     bool prev_any = false;
     float haptic_last = 0.0f;
@@ -500,9 +516,10 @@ void rumble_thread_main() {
         cfg_lk.unlock();
         const char* st = rs64_state_current_id();
         const auto tick_now = std::chrono::steady_clock::now();
-        lightbar_tick(light, st, std::chrono::duration<float>(tick_now - tick_t).count());
+        const float tick_dt = std::chrono::duration<float>(tick_now - tick_t).count();
+        lightbar_tick(light, st, tick_dt);
         tick_t = tick_now;
-        trigger_feel_tick();
+        trigger_feel_tick(tick_dt);
         const bool in_mission = st && std::strcmp(st, "mission") == 0;
         const rs64::rumble::Output out = rs64::rumble::tick(cfg, (const uint8_t*)g_recomp_rdram_for_wp_raw, in_mission);
         const bool any = out.lo > 0.0f || out.hi > 0.0f;
