@@ -96,6 +96,7 @@ void rs64_lobby_front_end(uint8_t*, recomp_context*);
 void rs64_ghost_craft_assets(uint8_t*, recomp_context*);
 void rs64_ghost_hud_fonts(recomp_context*);
 void rs64_ghost_hud_draw(uint8_t*, recomp_context*);
+void rs64_ghost_hud_reset();
 void rs64_ghost_radar(uint8_t*, recomp_context*);
 }
 
