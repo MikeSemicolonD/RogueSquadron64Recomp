@@ -288,8 +288,15 @@ static const char* rs64_host_caller_name(void* addr)
     DWORD64 disp = 0;
     char out[300];
 
+    HMODULE mod = nullptr;
+    char mod_name[MAX_PATH] = "no module";
+
+    if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)addr, &mod)) {
+        GetModuleFileNameA(mod, mod_name, sizeof mod_name);
+    }
+
     if (init && SymFromAddr(GetCurrentProcess(), (DWORD64)(uintptr_t)addr, &disp, sym)) snprintf(out, sizeof out, "%s+0x%llx", sym->Name, (unsigned long long)disp);
-    else snprintf(out, sizeof out, "rva%llx", (unsigned long long)((uintptr_t)addr - (uintptr_t)GetModuleHandleW(nullptr)));
+    else snprintf(out, sizeof out, "%s+0x%llx", mod_name, (unsigned long long)((uintptr_t)addr - (uintptr_t)mod));
 
     return cache.emplace(addr, out).first->second.c_str();
 }
