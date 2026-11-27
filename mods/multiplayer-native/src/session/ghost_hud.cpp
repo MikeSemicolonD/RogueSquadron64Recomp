@@ -164,15 +164,35 @@ static void hud_link_centred(uint8_t* rdram, recomp_context* ctx, uint32_t font,
     ww(rdram, 0x80138D28u, elem);
 }
 
+// What the co-op HUD lines last laid out. Each mission rebuilds the mission font (empty slots) and reuses RDRAM, so all of it must be forgotten at mission start:
+// a name label still counted as shown would be linked with no text, and a stale string buffer would be written into reused memory.
+struct HudState {
+    std::string shown, label_shown;
+    uint32_t buf = 0, label_buf = 0;
+    double left_at = -1.0;
+};
+
+static HudState& hud_state()
+{
+    static HudState st;
+    return st;
+}
+
+extern "C" void rs64_ghost_hud_reset()
+{
+    hud_state() = HudState();
+}
+
 // runInMissionFrame's draw pass, right after the subtitle is linked (0x800FAC70): the co-op message line, laid out on the mission font (u16 0x80B39014) slot 1 when it changes,
 // then linked into the 2D overlay list (head at viewport C+8 = 0x80138D28; element +0 next, +4 prev) at the top of the screen (origin at the centre, +y down; H at C+0x14).
 extern "C" void rs64_ghost_hud_draw(uint8_t* rdram, recomp_context* ctx)
 {
 
     Ghost& s = g();
-    static std::string shown;
-    static uint32_t buf = 0;
-    static double left_at = -1.0;
+    auto& st = hud_state();
+    std::string& shown = st.shown;
+    uint32_t& buf = st.buf;
+    double& left_at = st.left_at;
 
     if (!s.in_session) {
         shown.clear();
@@ -203,8 +223,8 @@ extern "C" void rs64_ghost_hud_draw(uint8_t* rdram, recomp_context* ctx)
 
     // The other player's pilot name 30 units above their ship on screen: its position projected the way the crosshair is (camera matrix 0x80138D4C, row-major 3x4;
     // cot of half the fov at C+0x20; sx = (W/2)(x cot / z) 0.75, sy = (H/2)(y cot / z), both +down, as the local craft checks out; shown only in front of the near plane C+0x24).
-    static std::string label_shown;
-    static uint32_t label_buf = 0;
+    std::string& label_shown = st.label_shown;
+    uint32_t& label_buf = st.label_buf;
     const bool label_on = !s.despawned && s.puppet_shown && !s.remote_name.empty();
     const std::string label = label_on ? s.remote_name : std::string();
 
