@@ -1952,6 +1952,12 @@ int rs64_th_runInMissionFrame_800FA94C(uint8_t* rdram, recomp_context* ctx) {
     return 0;
 }
 
+// runInMissionFrame 0x800FAAC4
+void rs64_th_runInMissionFrame_800FAAC4(uint8_t* rdram, recomp_context* ctx) {
+
+    rs64_hook(RS64_HOOK_MISSION_FRAME_CAMERA, rdram, ctx);
+}
+
 // endMissionCleanup 0x800FB9E4
 int rs64_th_endMissionCleanup_800FB9E4(uint8_t* rdram, recomp_context* ctx) {
 
@@ -2242,6 +2248,9 @@ int rs64_th_spawnPlayerAtStCannonFire_entry(uint8_t* rdram, recomp_context* ctx)
 // setupNpcUpdateFunctions entry: a DAT record's unit spawns
 int rs64_th_setupNpcUpdateFunctions_entry(uint8_t* rdram, recomp_context* ctx)
 {
+
+    rs64_log_dat_spawn(rdram, (uint32_t)ctx->r4);
+
     return rs64_hook(RS64_HOOK_DAT_SPAWN, rdram, ctx);
 }
 

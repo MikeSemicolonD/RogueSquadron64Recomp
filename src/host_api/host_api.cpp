@@ -545,6 +545,7 @@ const char* hook_name(uint32_t hook)
         "RS64_HOOK_AREA_CROSSED", "RS64_HOOK_PATH_POINT", "RS64_HOOK_OBJECTIVE_STATE", "RS64_HOOK_MISSION_READY",
         "RS64_HOOK_SONG_START", "RS64_HOOK_SOUND_3D", "RS64_HOOK_PLAYER_DAMAGE", "RS64_HOOK_PLAYER_FIRE",
         "RS64_HOOK_CAMERA", "RS64_HOOK_NPC_ATST_TICK", "RS64_HOOK_ATST_FIRE", "RS64_HOOK_DAT_SPAWN",
+        "RS64_HOOK_MISSION_FRAME_CAMERA",
     };
 
     static_assert(sizeof(names) / sizeof(names[0]) == RS64_HOOK_COUNT, "hook_name table must list every hook id");

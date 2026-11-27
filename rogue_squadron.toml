@@ -1890,6 +1890,12 @@ func = "runInMissionFrame"
 before_vram = 0x800FA94C
 text = '{ if (rs64_th_runInMissionFrame_800FA94C(rdram, ctx)) return; }'
 
+# hook: RS64_HOOK_MISSION_FRAME_CAMERA
+[[patches.hook]]
+func = "runInMissionFrame"
+before_vram = 0x800FAAC4
+text = '{ rs64_th_runInMissionFrame_800FAAC4(rdram, ctx); }'
+
 # hook: RS64_HOOK_MISSION_END
 [[patches.hook]]
 func = "endMissionCleanup"

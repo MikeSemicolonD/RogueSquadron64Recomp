@@ -50,6 +50,17 @@ def test_legend_mismatch_is_unusable():
     assert r.status == "unusable"
 
 
+def test_extra_replay_region_compares_shared_ones():
+    a = _write(["0 01 0A 0B 0C", "1 02 0A 0B 0D", "2 03 0A 0B 0E"])
+    d = pathlib.Path(tempfile.mkdtemp())
+    b = d / "coop.hash"
+    b.write_text("# frame combined rng mission npcs imposter\n0 F1 0A 0B 0C 77\n1 F2 0A 0B 0D 78\n2 F3 0A 0F 0E 79\n")
+    r = compare(a, str(b))
+    assert r.status == "diverged" and r.first_frame == 2 and r.regions == ["mission"]
+    b.write_text("# frame combined rng mission npcs imposter\n0 F1 0A 0B 0C 77\n1 F2 0A 0B 0D 78\n2 F3 0A 0B 0E 79\n")
+    assert compare(a, str(b)).status == "identical"
+
+
 def test_missing_file_is_unusable():
     a = _write(["0 01 0A 0B 0C"])
     r = compare(a, a + ".nope")

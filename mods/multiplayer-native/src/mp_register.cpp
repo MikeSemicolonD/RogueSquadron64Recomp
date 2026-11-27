@@ -242,6 +242,7 @@ extern "C" void rs64_mp_register(const rs64_host_api* api)
     add_hook(RS64_HOOK_SPEECH_RESPONSE_2, speech_gate, (void*)(uintptr_t)2);
     add_hook(RS64_HOOK_SPEECH_RESPONSE_1, speech_gate, (void*)(uintptr_t)1);
     add_hook(RS64_HOOK_MISSION_FRAME_NPCS, forward, (void*)rs64_imposter_frame);
+    add_hook(RS64_HOOK_MISSION_FRAME_CAMERA, forward, (void*)rs64_ghost_spectate_camera);
     add_hook(RS64_HOOK_MISSION_END, forward, (void*)rs64_imposter_release);
     add_hook(RS64_HOOK_MISSION_END, forward, (void*)rs64_ghost_tow_release);
     add_hook(RS64_HOOK_WINGMAN_DRAW, forward, (void*)rs64_ghost_tow_draw);

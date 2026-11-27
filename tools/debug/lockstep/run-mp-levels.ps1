@@ -1,10 +1,12 @@
 # Ghost co-op pair (run-mp.ps1) on every level's solo recording, both sides flying it, then a summary of how each mission ended.
-# Usage: .\tools\debug\lockstep\run-mp-levels.ps1 [-Mode sweep|deaths] [-Levels 0,16] [-Tag mplv] [-Speed 4] [-Binary .\build\Release\RogueSquadron64Recomp.exe]
-#   sweep:  both sides invincible; the host ends the mission (success) when its recording runs out, in case co-op drift kept it from finishing.
-#   deaths: the host invincible, the client shot down at 20/35/50% of the recording (the host's puppet dies and respawns each time), then the host fails the mission at 65%.
-# A side passes when its mission end reaches a front-end screen; writes logs\mp\<tag>-summary.csv and exits 1 if any level hung or never ended.
+# Usage: .\tools\debug\lockstep\run-mp-levels.ps1 [-Mode sweep|deaths|complete] [-Levels 0,16] [-Tag mplv] [-Speed 4] [-Binary .\build\Release\RogueSquadron64Recomp.exe]
+#   sweep:    both sides invincible; the host ends the mission (success) when its recording runs out, in case co-op drift kept it from finishing.
+#   deaths:   the host invincible, the client shot down at 20/35/50% of the recording (the host's puppet dies and respawns each time), then the host fails the mission at 65%.
+#   complete: the host replays its recording as a solo replay does and ignores the client's world messages (run-mp.ps1 -HostReplay -HostSolo), the client invincible, no scripted end;
+#             passes only when the host's mission ends in success, so a level that fails shows where the puppet alone still changes the mission.
+# Otherwise a side passes when its mission end reaches a front-end screen; writes logs\mp\<tag>-<mode>-summary.csv and exits 1 if any level fails.
 param(
-    [ValidateSet("sweep", "deaths")][string]$Mode = "sweep",
+    [ValidateSet("sweep", "deaths", "complete")][string]$Mode = "sweep",
     [int[]]$Levels = 0..18,
     [string]$Tag = "mplv",
     [int]$Speed = 4,
@@ -24,7 +26,12 @@ foreach ($level in $Levels) {
     $pad = $rec.FullName.Substring($root.Length + 1)
     $run = "$Tag-$Mode-{0:D2}" -f $level
     $runArgs = @{ Tag = $run; HostPad = $pad; ClientPad = $pad; Speed = $Speed; Binary = $Binary; Timeout = $Timeout; HostInvincible = $true; TestLives = 9 }
-    if ($Mode -eq "sweep") {
+    if ($Mode -eq "complete") {
+        $runArgs.Remove("HostInvincible")
+        $runArgs.ClientInvincible = $true
+        $runArgs.HostReplay = $true
+        $runArgs.HostSolo = $true
+    } elseif ($Mode -eq "sweep") {
         $runArgs.ClientInvincible = $true
         $runArgs.TestEnd = "${frames}:1"
     } else {
@@ -40,8 +47,10 @@ foreach ($level in $Levels) {
         $m = $lines | Select-String "^$role mission end: (.*)$" | Select-Object -Last 1
         $end[$role] = if ($m) { $m.Matches[0].Groups[1].Value } else { "no result" }
     }
-    $ok = $code -ne 2 -and $end.host -like "menu.*" -and $end.client -like "menu.*"
-    $rows += [pscustomobject]@{ level = $level; recording = $rec.Name; host = $end.host; client = $end.client; result = $(if ($ok) { "ok" } else { "FAIL" }) }
+    $ended = Select-String -Path (Join-Path $root "logs\mp\$run\host\run.log") -Pattern "\[ghost\] mission ended: result (\d+)" -ErrorAction SilentlyContinue | Select-Object -Last 1
+    $hostResult = if ($ended) { [int]$ended.Matches[0].Groups[1].Value } else { -1 }
+    $ok =if ($Mode -eq "complete") { $code -ne 2 -and $hostResult -eq 1 -and $end.client -like "menu.*" } else { $code -ne 2 -and $end.host -like "menu.*" -and $end.client -like "menu.*" }
+    $rows += [pscustomobject]@{ level = $level; recording = $rec.Name; host_result = $hostResult; host = $end.host; client = $end.client; result = $(if ($ok) { "ok" } else { "FAIL" }) }
 }
 $summary = Join-Path $root "logs\mp\$Tag-$Mode-summary.csv"
 $rows | Export-Csv -NoTypeInformation -Path $summary

@@ -80,6 +80,7 @@ typedef enum rs64_hook_id {
     RS64_HOOK_NPC_ATST_TICK = 57,        // npcAtStUpdate entry: an NPC AT-ST's update; a0 = its NPC context, a1 = the action (3 = tick), a2 = &dt; RETURN (r2 = 1) skips the update
     RS64_HOOK_ATST_FIRE = 58,            // spawnPlayerAtStCannonFire entry: a walker fires one gun; a0 = the walker's block (+0x30 its model, +0x72 its NPC slot), a1 = the gun (0 its model node "a", else node "b"); RETURN skips the shot
     RS64_HOOK_DAT_SPAWN = 59,            // setupNpcUpdateFunctions entry: a DAT record's unit spawns, at level load or when grid streaming brings it in range (including a destroyed unit's record it queued again); a0 = the record (+0 its type, +6 its NPC slot once spawned); RETURN skips the spawn
+    RS64_HOOK_MISSION_FRAME_CAMERA = 60, // runInMissionFrame 0x800FAAC4: the simulation has run and the cameras are about to read their target nodes (view 0's at *(0x80138D1C), matrix at +0x28); the target may be edited. Never RETURN (mid-function)
     RS64_HOOK_COUNT
 } rs64_hook_id;
 

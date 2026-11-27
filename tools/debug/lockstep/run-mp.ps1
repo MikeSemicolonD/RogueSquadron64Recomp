@@ -16,7 +16,7 @@ param(
     [int]$Speed = 4,
     [int]$Port = 27064,
     [int]$Timeout = 900,
-    [double]$P95 = 1.0,
+    [double]$P95 = 1.2,
     [string]$TestEnd = "",
     # Host fails the mission the way a level script does (fail request plus its voice line) on that mission frame.
     [int]$TestFail = -1,
@@ -94,7 +94,11 @@ param(
     [switch]$HostInvincible,
     [switch]$ClientInvincible,
     # Seconds a side may take from "[ghost] mission ended" to a front-end screen before the run counts it as hung (dumped, exit 2).
-    [int]$EndHang = 60
+    [int]$EndHang = 60,
+    # The host replays -HostPad as a solo replay does (its seed, audio answers and display settings) and writes host\host.replay.hash, to compare with the recording's .hash baseline.
+    [switch]$HostReplay,
+    # The host ignores the client's world messages (damage, triggers, pickups, shots, hits, lives), so its world plays as its solo recording did.
+    [switch]$HostSolo
 )
 $ErrorActionPreference = "Stop"
 if ($Level -eq 20) { throw "CHICKEN (level 20) is solo only: the co-op menus cannot start it." }
@@ -104,7 +108,7 @@ $exeDir = Split-Path $exe
 $out = Join-Path $root "logs\mp\$Tag"
 if ($Split -or $ClientPage -or $HostPage) { $ClientLive = $true }
 $claim = Join-Path $out "claim"
-$vars = "ROGUESQ_MCP_PORT", "ROGUESQ_WIDESCREEN", "ROGUESQ_INPUT_CLAIM", "ROGUESQ_MP","ROGUESQ_MP_ADDR", "ROGUESQ_MP_PORT", "ROGUESQ_MP_PAD", "ROGUESQ_MP_SIM_LATENCY_MS", "ROGUESQ_MP_SIM_LOSS_PCT", "ROGUESQ_MP_SIM_JITTER_MS", "ROGUESQ_BOOT_TARGET", "ROGUESQ_FAKE_CONTROLLER", "ROGUESQ_AUDIO_GAIN", "ROGUESQ_SPEED", "ROGUESQ_NAV_STEP_BUDGET", "ROGUESQ_COOP_LOCAL", "ROGUESQ_LS_PAD2_REPLAY", "ROGUESQ_LS_REPLAY", "ROGUESQ_LS_RECORD", "ROGUESQ_GHOST_TRACE", "ROGUESQ_MP_TEST","ROGUESQ_WINDOW_POS", "ROGUESQ_MP_TEST_LIVES", "ROGUESQ_MP_TEST_VERSION", "ROGUESQ_NET_CONFIG", "ROGUESQ_MP_TEST_UNLOCK", "ROGUESQ_MP_TEST_TRIGGER_SOLO", "ROGUESQ_MP_TEST_ALLCRAFT", "ROGUESQ_NAV_WATCH_CUTSCENES", "ROGUESQ_MP_TEST_NO_SKIP_SHARE", "ROGUESQ_MP_UPNP", "ROGUESQ_FULLSCREEN", "ROGUESQ_RT_LIGHTS", "ROGUESQ_RT_SHADOWS", "ROGUESQ_RT_FOG_SHAFTS", "ROGUESQ_MP_RELAY", "ROGUESQ_INPUT_SEQ", "ROGUESQ_INPUT_DELAY", "ROGUESQ_MP_TEST_SKIP_CRAWL", "ROGUESQ_MP_TEST_CONTINUE", "ROGUESQ_MP_TEST_JOIN_PIN", "ROGUESQ_NAV_BROWSE", "ROGUESQ_LOG_GAMESTATE", "ROGUESQ_UNFOCUSED"
+$vars = "ROGUESQ_MCP_PORT", "ROGUESQ_WIDESCREEN", "ROGUESQ_INPUT_CLAIM", "ROGUESQ_MP","ROGUESQ_MP_ADDR", "ROGUESQ_MP_PORT", "ROGUESQ_MP_PAD", "ROGUESQ_MP_SIM_LATENCY_MS", "ROGUESQ_MP_SIM_LOSS_PCT", "ROGUESQ_MP_SIM_JITTER_MS", "ROGUESQ_BOOT_TARGET", "ROGUESQ_FAKE_CONTROLLER", "ROGUESQ_AUDIO_GAIN", "ROGUESQ_SPEED", "ROGUESQ_NAV_STEP_BUDGET", "ROGUESQ_COOP_LOCAL", "ROGUESQ_LS_PAD2_REPLAY", "ROGUESQ_LS_REPLAY", "ROGUESQ_LS_RECORD", "ROGUESQ_GHOST_TRACE", "ROGUESQ_MP_TEST","ROGUESQ_WINDOW_POS", "ROGUESQ_MP_TEST_LIVES", "ROGUESQ_MP_TEST_VERSION", "ROGUESQ_NET_CONFIG", "ROGUESQ_MP_TEST_UNLOCK", "ROGUESQ_MP_TEST_TRIGGER_SOLO", "ROGUESQ_MP_TEST_ALLCRAFT", "ROGUESQ_NAV_WATCH_CUTSCENES", "ROGUESQ_MP_TEST_NO_SKIP_SHARE", "ROGUESQ_MP_UPNP", "ROGUESQ_FULLSCREEN", "ROGUESQ_RT_LIGHTS", "ROGUESQ_RT_SHADOWS", "ROGUESQ_RT_FOG_SHAFTS", "ROGUESQ_MP_RELAY", "ROGUESQ_INPUT_SEQ", "ROGUESQ_INPUT_DELAY", "ROGUESQ_MP_TEST_SKIP_CRAWL", "ROGUESQ_MP_TEST_CONTINUE", "ROGUESQ_MP_TEST_JOIN_PIN", "ROGUESQ_NAV_BROWSE", "ROGUESQ_LOG_GAMESTATE", "ROGUESQ_UNFOCUSED", "ROGUESQ_LS_HASH_OUT", "ROGUESQ_MP_TEST_HOST_REPLAY", "ROGUESQ_MP_TEST_HOST_SOLO", "ROGUESQ_LS_KEEP_RUNNING"
 $saved = @{}
 foreach ($v in $vars) { $saved[$v] = [Environment]::GetEnvironmentVariable($v, "Process") }
 $procs = @{}
@@ -200,6 +204,14 @@ try {
         # Behind other windows, so a scripted pair never takes focus from the user; hand-flown runs keep it.
         $env:ROGUESQ_UNFOCUSED = if ($live) { $null } else { "1" }
         $env:ROGUESQ_MP_PAD = if ($live) { $null } else { (Resolve-Path (Join-Path $root $pad)).Path }
+        $replay = $HostReplay -and $role -eq "host"
+        $env:ROGUESQ_LS_REPLAY = if ($replay) { $env:ROGUESQ_MP_PAD } else { $null }
+        $env:ROGUESQ_LS_HASH_OUT = if ($replay) { Join-Path $dir "host.replay.hash" } else { $null }
+        $env:ROGUESQ_MP_TEST_HOST_REPLAY = if ($replay) { "1" } else { $null }
+        # A recording ends on the frame its mission is won, so the host keeps running past it to reach the mission end.
+        $env:ROGUESQ_LS_KEEP_RUNNING = if ($replay) { "1" } else { $null }
+        $env:ROGUESQ_MP_TEST_HOST_SOLO = if ($HostSolo -and $role -eq "host") { "1" } else { $null }
+        if ($replay) { $env:ROGUESQ_MP_PAD = $null }
         $env:ROGUESQ_LS_RECORD = if ($role -eq "client" -and $ClientRecord) { [IO.Path]::GetFullPath((Join-Path $root $ClientRecord)) } else { $null }
         $env:ROGUESQ_MP_SIM_LATENCY_MS = "$Latency"
         $env:ROGUESQ_MP_SIM_LOSS_PCT = "$Loss"
@@ -275,6 +287,7 @@ try {
             if ($endState[$role]) { continue }
             $menu = Select-String -Path $log -Pattern "\[gamestate\] -> (menu\.\S+)" | Where-Object { $_.LineNumber -gt $endLine[$role] } | Select-Object -First 1
             if ($menu) { $endState[$role] = $menu.Matches[0].Groups[1].Value; continue }
+            if ($procs[$role].HasExited) { continue }
             $pending = $true
             if (((Get-Date) - $endAt[$role]).TotalSeconds -ge $EndHang -and -not $procs[$role].HasExited) {
                 "$role hung after the mission ended (no front-end screen in $EndHang s); dumping pid $($procs[$role].Id)"

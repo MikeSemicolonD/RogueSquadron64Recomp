@@ -33,18 +33,24 @@ def compare(baseline_path, replay_path):
         names_b, rows_b = _load(replay_path)
     except (OSError, ValueError) as e:
         return Result("unusable", detail=str(e))
-    if names_a != names_b:
+    # A co-op host's log adds regions (the imposter) to the solo baseline's: then only the shared regions are compared, column by column, since the combined hash covers them all.
+    shared = [n for n in names_a if n in names_b]
+    if shared != names_a:
         return Result("unusable", detail=f"region sets differ: {names_a} vs {names_b}")
     if not rows_a or not rows_b:
         return Result("unusable", detail=f"no frames: {len(rows_a)} vs {len(rows_b)}")
+    cols_a = [names_a.index(n) for n in shared]
+    cols_b = [names_b.index(n) for n in shared]
     n = min(len(rows_a), len(rows_b))
     for i in range(n):
         fa, ca, pa = rows_a[i]
         fb, cb, pb = rows_b[i]
         if fa != fb:
             return Result("unusable", i, detail=f"frame numbering differs at row {i}: {fa} vs {fb}")
-        if ca != cb:
-            regions = [names_a[k] for k in range(len(names_a)) if pa[k] != pb[k]]
+        if names_a == names_b and ca == cb:
+            continue
+        regions = [shared[k] for k in range(len(shared)) if pa[cols_a[k]] != pb[cols_b[k]]]
+        if regions:
             return Result("diverged", i, fa, regions)
     # A run killed mid-frame can leave one file a single trailing line ahead.
     if abs(len(rows_a) - len(rows_b)) > 1:

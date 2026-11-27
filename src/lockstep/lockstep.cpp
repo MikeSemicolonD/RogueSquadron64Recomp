@@ -374,7 +374,10 @@ extern "C" void rs64_ls_on_mission_init(uint8_t* rdram, recomp_context*)
     // Ghost co-op keeps only a recording of this player's input (for run-mp.ps1 -ClientPad): no reseed and no hashes, since the two worlds differ by design.
     const bool ghost = rs64::host::flag("ghost_mode") != 0;
 
-    if (ghost && s.mode != Mode::Record) {
+    // A test host replays a solo recording in full (seed, audio answers, hashes) to measure how far the other player moves its world off the solo run.
+    static const bool s_host_replay = recomp::dbg::env_on("ROGUESQ_MP_TEST_HOST_REPLAY");
+
+    if (ghost && s.mode != Mode::Record && !(s_host_replay && s.mode == Mode::Replay)) {
         static bool s_logged = false;
 
         if (!s_logged) {

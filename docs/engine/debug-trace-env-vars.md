@@ -446,6 +446,7 @@ One-shot dumps in MIPS byte order (same layout as a PJ64 dump) for `tools/debug/
 | `ROGUESQ_LOG_MENU_FIX` | off | menu present fix | Decisions of the menu present fix. |
 | `ROGUESQ_LOG_ZPRIM` | off | zSource=PRIM states | Each distinct PRIM-depth draw state once (and at 1000 / 100000 hits): otherMode, Z bits, cull bits, the game's primDepth and the value sent. |
 | `ROGUESQ_LOG_TERRAIN_CRACKS` | off | `[tcrack]` | Terrain tile-edge height mismatches every 5 s; expect 0 (thousands with `F5_TERRAIN_SEAMS=0`). |
+| `ROGUESQ_LOG_DAT_SPAWN` | off | `[dat-spawn] rec … type … slot … flags … at x,y,z` | Every DAT record's unit spawn (`setupNpcUpdateFunctions`): at level load and from grid streaming, including a destroyed or streamed-out unit's record spawning again. `flags` is the record's +0x4C (bit 31 once tripped or dead), the position its spawn point. |
 | `ROGUESQ_LOG_GAMESTATE` | off | engine globals | Level, craft, cinematic stage, screen, menu id on change and every 512 presents; `gateCtr` vs `cuts44` shows whether a cinematic is advancing. |
 | `ROGUESQ_LOG_DISCORD` | off | `[discord]` | Each Discord status change with the overlay and game state it came from: the two lines, the timer start and the co-op player count. |
 | `ROGUESQ_LOG_GPU_MEM` | off | GPU allocator | `[gpu-mem]` on every game-state change: per heap (local = VRAM, system = shared), the allocator's blocks and the allocations in them (count/MB), and the driver's usage and budget for the process. Growth in `blocks` with flat `allocs` is the allocator keeping freed blocks; growth in both across repeats of one level is leftover resources. |
@@ -481,7 +482,7 @@ Inert unless set. Record and replay are active only in real missions (never attr
 | `ROGUESQ_LS_PAD2_REPLAY` | unset | `<path.rec>` (needs `COOP_LOCAL=1`): port 1 plays a recorded port-0 run from mission frame 0, START masked. Must match the running level and craft. The hash log gains an `imposter` column (a hash part the multiplayer code registers). Single-player recordings' song answers stop matching once the imposter changes the mission; re-record with co-op on. |
 | `ROGUESQ_MP` | unset | `host` or `join`: online co-op, ghost model. Each instance flies its own player 1 in its own world; the other player is the imposter, posed from the state that player streams at 30 Hz (dead reckoning up to 0.5 s, corrections blended over 0.1 s, snaps past 20 units). Both must enter the same level and craft; the host sends LAUNCH at `initMission` and the client checks it. The host owns the mission result, objectives and the lives pool; DAT health is mirrored both ways (drops sent as DAMAGE batches through the game's own hit). The same session starts from the front end (MAIN MENU -> MULTIPLAYER). A HELLO handshake checks protocol + `kBuildId` (`VERSION MISMATCH` otherwise). Implies `COOP_LOCAL`. Logs `[ghost]`. Pairs: `tools/debug/lockstep/run-mp.ps1`. Details in [multiplayer.md](../guides/multiplayer.md). |
 | `ROGUESQ_GHOST_OBJ_TRACE` | unset | `1`: every 150 frames, hashes of objective booleans, counts and DAT health plus the alive count, to compare the two worlds. |
-| `ROGUESQ_GHOST_INTERP_MS` | 50 | Show the remote player N ms in the past between buffered states (0 = dead reckoning from the latest state). |
+| `ROGUESQ_GHOST_INTERP_MS` | 100 | Show the remote player N ms in the past between buffered states (0 = dead reckoning from the latest state). |
 | `ROGUESQ_GHOST_TRACE` | unset | `<path.csv>`: per frame `ms,local_x,local_y,local_z,puppet_x,puppet_y,puppet_z`; `tools/debug/lockstep/ghost_error.py` compares two traces. |
 | `ROGUESQ_WINDOW_POS` | centered | `x,y`, `left` or `right` (either side of the primary display's centre, 8 px apart), or `top` / `bottom` (a borderless half of the primary display, for a split-screen test pair). |
 | `ROGUESQ_NET_CONFIG` | `roguesq_net.json` next to the exe | Lobby config `{ "last_address": "a.b.c.d", "port": 27064 }` (JOIN address saved on each JOIN; the port both roles use unless `MP_PORT` is set). |
@@ -513,6 +514,8 @@ Test knobs used by `tools/debug/lockstep/run-mp.ps1` (flag in brackets):
 - `ROGUESQ_MP_TEST_TRIGGER_SOLO=1` [-TestTriggerSolo] — the host drops its own player trigger-volume edges, so only the client's forwarded ones can advance the mission.
 - `ROGUESQ_MP_TEST_NO_SKIP_SHARE=1` [-ClientLate] — the client ignores the host's cutscene skips (a late joiner).
 - `ROGUESQ_MP_TEST_SKIP_CRAWL=1` [-HostSkipCrawl] — press START 60 polls into the opening crawl (only the host's skip is shared).
+- `ROGUESQ_MP_TEST_HOST_REPLAY=1` [-HostReplay] — `ROGUESQ_LS_REPLAY` runs in a ghost co-op session too (seed, audio answers and hash log, normally skipped), so the host's hashes can be compared with the solo recording's baseline.
+- `ROGUESQ_MP_TEST_HOST_SOLO=1` [-HostSolo] — the host ignores the client's world messages (damage, upgrades, pickups, triggers, shots, tow cable, hits, lives, out), so only the puppet's pose reaches its world.
 - `ROGUESQ_MP_TEST_CONTINUE=<polls>` [-HostContinue / -ClientContinue] — press continue that many polls into each debrief, to test the both-players hold.
 
 ## How to add a new debug trace

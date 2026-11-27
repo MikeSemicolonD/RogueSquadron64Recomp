@@ -273,13 +273,14 @@ void sync_dat(uint8_t* rdram, recomp_context* ctx)
             continue;
         }
 
-        // A tripped walker dies from its own fall (which counts the objective); a hit on it would skip that count.
-        if ((rw(rdram, item + 0x4C) & 0x80000000u) || std::find(s.tow_in.begin(), s.tow_in.end(), d.first) != s.tow_in.end())
+        const int32_t local = dat_health(rdram, item);
+        const bool tripped = (rw(rdram, item + 0x4C) & 0x80000000u) != 0;
+
+        // A walker the other player tripped takes no mirrored damage until it is tripped here too (the trip is what downs it).
+        if (!tripped && std::find(s.tow_in.begin(), s.tow_in.end(), d.first) != s.tow_in.end())
         {
             continue;
         }
-
-        const int32_t local = dat_health(rdram, item);
 
         if (local > 0 && local > d.second && !dat_damage_safe(rdram, item))
         {
@@ -298,7 +299,8 @@ void sync_dat(uint8_t* rdram, recomp_context* ctx)
         if (local > 0 && local > d.second)
         {
             const uint32_t slot = rs64::mips::rh(rdram, item + 6);
-            const uint32_t dmg = (uint32_t)(local - d.second);
+            // A downed walker takes a reduced share of a hit, so the other player's kill on one is sent as the largest hit.
+            const uint32_t dmg = tripped && d.second <= 0 ? 0xFFFFu : (uint32_t)(local - d.second);
 
             if (slot == 0xFFFFu && d.second > 0)
             {
@@ -328,6 +330,14 @@ void sync_dat(uint8_t* rdram, recomp_context* ctx)
 
             // The item's actual health after the hit, so a damage scale other than 1 can't ratchet the two worlds down.
             s.dat_last[d.first] = dat_health(rdram, item);
+
+            // A downed walker takes a hit's damage in steps (10 a hit), so it is hit again on later frames until it reaches the other player's health.
+            const int32_t now = dat_health(rdram, item);
+
+            if (tripped && slot != 0xFFFFu && now > 0 && now > d.second && s.tow_kill_wait[d.first]++ < kTowHitFrames)
+            {
+                retry.push_back(d);
+            }
         }
     }
 
