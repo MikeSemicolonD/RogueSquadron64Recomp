@@ -319,6 +319,8 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 - Objects (static blue units) on radar will pop in and out when out of view of the player.
 
+- The first AT-AT seen during Imperial Ship Yard will only continue walking for as long as the player is in range and will reset it's position when the player gets far enough. (One of many cases where NPC behavior depends on player proximity)
+
 ### Roadmap
 
 - RS64 Improvements/Fixes
