@@ -13,7 +13,7 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 >
 > Most of the debugging, architectural decisions, and code here were produced with Claude.
 
-<!-- <div hidden align="center">
+<div hidden align="center">
 
 ---
   
@@ -23,9 +23,9 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
       media="(prefers-color-scheme: dark)"
     />
     <img align="top" src="./docs/recomp-launcher/badge-light.svg" alt="Recomp. Launcher" />
-</picture>](https://mikesemicolond.github.io/RogueSquadron64Recomp/)
+</picture>](https://recomplauncher.com/)
 
-</div> -->
+</div>
 
 ---
 
