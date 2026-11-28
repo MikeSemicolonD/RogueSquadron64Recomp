@@ -601,7 +601,7 @@ Here's a list of MCPs that could be useful for this project:
 
 - **[gpeter12](https://github.com/gpeter12)**: Helped to test and verify that the recomp. works on Linux Mint 22.3 - Cinnamon 64-bit in addition to testing and verifying the 'setup.sh' to improve the build process for both developers & non-developers.
 
-- **[nandologia](https://github.com/nandologia)**: Tested and verified that the recomp works in Batocera, tested the multiplayer co-op component and provided fixes for segfault and black screens.
+- **[nandologia](https://github.com/nandologia)**: Tested and verified that the recomp works in Batocera, tested the multiplayer co-op component with Batocera and Mint together and provided fixes for segfault and black screens.
 
 ## Acknowledgements
 
