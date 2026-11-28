@@ -547,6 +547,27 @@ void deliver_mod_message(const std::vector<uint8_t>& m)
 constexpr size_t kMaxDatApply = 4 * 4096;
 constexpr size_t kMaxTriggerIn = 1024;
 
+// The messages through which the other player changes this side's world (ROGUESQ_MP_TEST_HOST_SOLO drops them on the host).
+bool client_world_message(rs64::net::Msg type)
+{
+
+    switch (type) {
+    case rs64::net::Msg::Damage:
+    case rs64::net::Msg::Upgrades:
+    case rs64::net::Msg::Pickup:
+    case rs64::net::Msg::Trigger:
+    case rs64::net::Msg::Shot:
+    case rs64::net::Msg::TowTrip:
+    case rs64::net::Msg::TowSeg:
+    case rs64::net::Msg::Hit:
+    case rs64::net::Msg::Life:
+    case rs64::net::Msg::Out:
+        return true;
+    default:
+        return false;
+    }
+}
+
 void drain()
 {
 
@@ -586,6 +607,13 @@ void drain()
 
         // A connection that has not passed the handshake (and the password) only gets to attempt it.
         if (!s.lobby.ready() && !rs64::net::handshake_message(type)) {
+            continue;
+        }
+
+        // Test: the host's world plays as its solo recording did, so it ignores everything the client changes in it (the puppet's pose still arrives).
+        static const bool s_host_solo = recomp::dbg::env_on("ROGUESQ_MP_TEST_HOST_SOLO");
+
+        if (s_host_solo && s.player == 0 && client_world_message((rs64::net::Msg)type)) {
             continue;
         }
 
@@ -652,7 +680,10 @@ void drain()
                 }
 
                 for (uint16_t i : s.tows_mine) {
-                    s.link.send(rs64::net::encode_tow_trip(mission_tag(), i), true);
+                    const Vec3 at = s.tow_pos[i];
+                    const float pos[3] = {at.x, at.y, at.z};
+
+                    s.link.send(rs64::net::encode_tow_trip(mission_tag(), i, pos), true);
                 }
             } else if (s.remote_in && (s.remote_epoch < 0 || e == (uint8_t)s.remote_epoch)) {
                 s.remote_in = false;
@@ -813,10 +844,12 @@ void drain()
         case rs64::net::Msg::TowTrip: {
             uint8_t e = 0;
             uint16_t i = 0;
+            float pos[3] = {};
 
-            if (s.in_session && s.rdram && rs64::net::decode_tow_trip(m.data(), m.size(), &e, &i) && e == mission_tag() && i < dat_count(s.rdram) && std::find(s.tow_in.begin(), s.tow_in.end(), i) == s.tow_in.end())
+            if (s.in_session && s.rdram && rs64::net::decode_tow_trip(m.data(), m.size(), &e, &i, &pos) && e == mission_tag() && i < dat_count(s.rdram) && std::find(s.tow_in.begin(), s.tow_in.end(), i) == s.tow_in.end())
             {
                 s.tow_in.push_back(i);
+                s.tow_pos[i] = {pos[0], pos[1], pos[2]};
             }
 
             break;
@@ -1549,6 +1582,11 @@ extern "C" void rs64_ghost_mission_init(uint8_t* rdram, recomp_context* ctx)
 
         s.remote_craft = h.craft;
 
+        // Scripted sessions (ROGUESQ_MP) skip craft select, so the host learns this player's craft here, ahead of the presence it waits for and before its puppet's model loads.
+        if (!rs64_lobby_menu_session()) {
+            s.link.send(rs64::net::encode_ready((uint8_t)running.craft), true);
+        }
+
         fprintf(stderr, "[ghost] level %u, craft here %u, host's craft %u\n", running.level, running.craft, h.craft);
         s.mission_id = s.latest_mission >= 0 ? (uint8_t)s.latest_mission : 0;
     }
@@ -1561,7 +1599,8 @@ extern "C" void rs64_ghost_mission_init(uint8_t* rdram, recomp_context* ctx)
     s.have_prev = false;
     s.puppet = Puppet{};
     s.play_clock.reset();
-    static const long interp_ms = recomp::dbg::env_int("ROGUESQ_GHOST_INTERP_MS", 50);
+    // Three game frames: a shorter buffer runs dry on uneven frame pacing, and the puppet then overshoots on extrapolation and is pulled back.
+    static const long interp_ms = recomp::dbg::env_int("ROGUESQ_GHOST_INTERP_MS", 100);
     s.puppet.set_interp(interp_ms / 1000.0);
     s.puppet_shown = false;
 
@@ -1605,6 +1644,9 @@ extern "C" void rs64_ghost_mission_init(uint8_t* rdram, recomp_context* ctx)
     s.trigger_applying = false;
     s.tows_mine.clear();
     s.tow_in.clear();
+    s.tow_pos.clear();
+    s.tow_kill_wait.clear();
+    s.tow_move.clear();
     s.ff_damage = 0;
     s.tow_retry.clear();
     s.tow_injecting = false;
@@ -2003,6 +2045,9 @@ extern "C" void rs64_ghost_frame(uint8_t* rdram, recomp_context* ctx)
         const PuppetState p = s.puppet.step(s.play_clock.advance(now_s(), dt), dt);
         const Vec3* parts[4] = {&p.pos, &p.fwd, &p.down, &p.vel};
 
+        s.spectate_pose = p;
+        s.spectate_posed = true;
+
         for (int k = 0; k < 4; ++k) {
             wf(rdram, 0x80137DC0u + k * 0xC + 0x0, parts[k]->x);
             wf(rdram, 0x80137DC0u + k * 0xC + 0x4, parts[k]->y);
@@ -2144,4 +2189,45 @@ extern "C" void rs64_ghost_frame(uint8_t* rdram, recomp_context* ctx)
     }
 
     s.frame++;
+}
+
+// Just before the camera reads view 0's target node (runInMissionFrame 0x800FAAC4): the dead craft's physics rebuilt that node's matrix from its own state after the spectate write, so the camera turned with it instead of with the other player.
+extern "C" void rs64_ghost_spectate_camera(uint8_t* rdram, recomp_context*)
+{
+
+    Ghost& s = g();
+
+    if (!s.spectate_posed)
+    {
+        return;
+    }
+
+    s.spectate_posed = false;
+
+    const uint32_t node = rw(rdram, 0x80138D1Cu);
+
+    if ((node & 0xFF000000u) != 0x80000000u)
+    {
+        return;
+    }
+
+    const PuppetState& p = s.spectate_pose;
+
+    const Vec3 right = {p.down.y * p.fwd.z - p.down.z * p.fwd.y, p.down.z * p.fwd.x - p.down.x * p.fwd.z, p.down.x * p.fwd.y - p.down.y * p.fwd.x};
+    const Vec3* cols[3] = {&right, &p.down, &p.fwd};
+    const uint32_t m = node + 0x28u;
+
+    // Each column keeps its length: the node's matrix carries the craft model's scale.
+    for (int c = 0; c < 3; ++c) {
+        const float x = rf(rdram, m + c * 4 + 0x00), y = rf(rdram, m + c * 4 + 0x0C), z = rf(rdram, m + c * 4 + 0x18);
+        const float len = std::max(std::sqrt(x * x + y * y + z * z), 1e-6f);
+
+        wf(rdram, m + c * 4 + 0x00, cols[c]->x * len);
+        wf(rdram, m + c * 4 + 0x0C, cols[c]->y * len);
+        wf(rdram, m + c * 4 + 0x18, cols[c]->z * len);
+    }
+
+    wf(rdram, m + 0x24u, p.pos.x);
+    wf(rdram, m + 0x28u, p.pos.y);
+    wf(rdram, m + 0x2Cu, p.pos.z);
 }

@@ -207,6 +207,12 @@ int atst_tick(uint32_t, uint8_t* rdram, void* c, void*)
     return rs64_imposter_atst_tick(rdram, (recomp_context*)c) ? RS64_HOOK_RETURN : RS64_HOOK_CONTINUE;
 }
 
+// The puppet's destroy queues its record for grid streaming again (parseDatItemCommon), which would spawn an AI wingman from it next to the puppet.
+int dat_spawn(uint32_t, uint8_t*, void* c, void*)
+{
+    return (uint32_t)((recomp_context*)c)->r4 == rs64::ls::kImposterRec ? RS64_HOOK_RETURN : RS64_HOOK_CONTINUE;
+}
+
 int block_result(uint32_t, uint8_t*, void*, void*)
 {
     return rs64_ghost_block_result() ? RS64_HOOK_RETURN : RS64_HOOK_CONTINUE;
@@ -236,6 +242,7 @@ extern "C" void rs64_mp_register(const rs64_host_api* api)
     add_hook(RS64_HOOK_SPEECH_RESPONSE_2, speech_gate, (void*)(uintptr_t)2);
     add_hook(RS64_HOOK_SPEECH_RESPONSE_1, speech_gate, (void*)(uintptr_t)1);
     add_hook(RS64_HOOK_MISSION_FRAME_NPCS, forward, (void*)rs64_imposter_frame);
+    add_hook(RS64_HOOK_MISSION_FRAME_CAMERA, forward, (void*)rs64_ghost_spectate_camera);
     add_hook(RS64_HOOK_MISSION_END, forward, (void*)rs64_imposter_release);
     add_hook(RS64_HOOK_MISSION_END, forward, (void*)rs64_ghost_tow_release);
     add_hook(RS64_HOOK_WINGMAN_DRAW, forward, (void*)rs64_ghost_tow_draw);
@@ -252,6 +259,7 @@ extern "C" void rs64_mp_register(const rs64_host_api* api)
     add_hook(RS64_HOOK_WINGMAN_TICK, forward, (void*)rs64_imposter_tick);
     add_hook(RS64_HOOK_NPC_ATST_TICK, atst_tick);
     add_hook(RS64_HOOK_ATST_FIRE, forward, (void*)rs64_ghost_atst_fire);
+    add_hook(RS64_HOOK_DAT_SPAWN, dat_spawn);
     add_hook(RS64_HOOK_NPC_ACTIVATION, npc_activation);
     add_hook(RS64_HOOK_GRID_STREAM, forward, (void*)rs64_imposter_stream);
     add_hook(RS64_HOOK_MISSION_SELECT_INIT, forward, (void*)rs64_lobby_mission_select_init);

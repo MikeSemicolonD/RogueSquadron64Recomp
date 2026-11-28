@@ -4,20 +4,70 @@
 #include "util/rdram_words.h"
 #include "mp_host.h"
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <vector>
 
 namespace rs64::ghost {
 
 using namespace rs64::ls;
+using rs64::mips::rf;
 using rs64::mips::rw;
 using rs64::mips::ww;
+
+// A walker this side tripped for the other player lies where theirs fell, since this world's copy can be a little further along its path.
+// Its position (ext = NPC context +4, position at +0), its model's translation (NPC context +0xC, +0x4C) and the record's (+0x10) move together; the slot is checked against its context first.
+static void move_downed_walker(uint8_t* rdram, uint16_t i)
+{
+
+    Ghost& s = g();
+    const auto at = s.tow_pos.find(i);
+    const uint32_t item = dat_item(rdram, i);
+    const uint32_t slot = item ? rs64::mips::rh(rdram, item + 6) : 0xFFFFu;
+    const uint32_t table = rw(rdram, 0x80130BB0u);
+    const uint32_t nctx = slot < 0x800u ? rw(rdram, table + slot * 8u) : 0u;
+
+    if (at == s.tow_pos.end() || nctx < 0x80000000u || nctx >= 0x80800000u - 0x40u || rs64::mips::rh(rdram, nctx + 0x16) != slot)
+    {
+        return;
+    }
+
+    const uint32_t ext = rw(rdram, nctx + 4u);
+    const uint32_t obj = rw(rdram, nctx + 0xCu);
+
+    if (ext < 0x80000000u || ext >= 0x80800000u - 0x40u || obj < 0x80000000u || obj >= 0x80800000u - 0x60u)
+    {
+        return;
+    }
+
+    const float dx = at->second.x - rf(rdram, ext);
+    const float dz = at->second.z - rf(rdram, ext + 8u);
+    const float* v = &at->second.x;
+
+    for (uint32_t k = 0; k < 3; ++k) {
+        wf(rdram, ext + k * 4u, v[k]);
+        wf(rdram, obj + 0x4Cu + k * 4u, v[k]);
+        wf(rdram, item + 0x10u + k * 4u, v[k]);
+    }
+
+    if (dx * dx + dz * dz > 0.01f)
+    {
+        fprintf(stderr, "[ghost] walker %u moved %.1f to where the other player tripped it (frame %u)\n", i, std::sqrt(dx * dx + dz * dz), s.frame);
+    }
+}
 
 // The other player's tow-cable trips: this world's copy gets the harpoon's own trip message (action 9, kind 0xE at +0x18), with sender slot 0xFFFF so the walker's release reply goes nowhere. An unspawned walker waits until it spawns.
 void apply_remote_tows(uint8_t* rdram, recomp_context* ctx)
 {
 
     Ghost& s = g();
+
+    // The walker settles into its downed pose over its first frames after the trip and places itself once there, so the move repeats until it holds.
+    for (auto it = s.tow_move.begin(); it != s.tow_move.end();)
+    {
+        move_downed_walker(rdram, it->first);
+        it = --it->second > 0 ? std::next(it) : s.tow_move.erase(it);
+    }
 
     if (s.tow_in.empty() || s.frame < kDamageSettleFrames || rs64::mp::in_cutscene())
     {
@@ -58,6 +108,8 @@ void apply_remote_tows(uint8_t* rdram, recomp_context* ctx)
         if (rw(rdram, item + 0x4C) & 0x80000000u)
         {
             s.tow_retry.erase(i);
+            s.tow_move[i] = kTowMoveFrames;
+            move_downed_walker(rdram, i);
 
             fprintf(stderr, "[ghost] walker %u tripped for the other player\n", i);
             continue;
@@ -231,14 +283,19 @@ extern "C" void rs64_ghost_walker_tripped(uint8_t* rdram, recomp_context* ctx)
         return;
     }
 
-    const uint32_t item = rw(rdram, (uint32_t)ctx->r17 + 0x34u);
+    const uint32_t ext = (uint32_t)ctx->r17;
+    const uint32_t item = rw(rdram, ext + 0x34u);
     const uint32_t n = dat_count(rdram);
+
+    // The walker's position, ext +0 (map space): walkers out of every player's range restart their path, so the two worlds' copies can be apart.
+    const float pos[3] = {rf(rdram, ext), rf(rdram, ext + 4u), rf(rdram, ext + 8u)};
 
     for (uint32_t i = 0; i < n; ++i) {
         if (dat_item(rdram, i) == item)
         {
             s.tows_mine.push_back((uint16_t)i);
-            s.link.send(rs64::net::encode_tow_trip(mission_tag(), (uint16_t)i), true);
+            s.tow_pos[(uint16_t)i] = {pos[0], pos[1], pos[2]};
+            s.link.send(rs64::net::encode_tow_trip(mission_tag(), (uint16_t)i, pos), true);
 
             fprintf(stderr, "[ghost] walker %u tripped; sent to the other player\n", i);
             return;

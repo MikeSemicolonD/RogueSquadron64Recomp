@@ -23,7 +23,7 @@ int add_quit_handler(rs64_event_fn fn, void* user);
 void run_quit_handlers();
 // Hooks with a rogue_squadron.toml site (one each); the others are dispatched by host code.
 constexpr bool hook_has_toml_site(uint32_t id) {
-    return (id >= 1u && id <= RS64_HOOK_RADAR) || (id >= RS64_HOOK_POWERUP_TOUCH && id <= RS64_HOOK_SPEECH_CLIP) || (id >= RS64_HOOK_SONG_START && id <= RS64_HOOK_ATST_FIRE);
+    return (id >= 1u && id <= RS64_HOOK_RADAR) || (id >= RS64_HOOK_POWERUP_TOUCH && id <= RS64_HOOK_SPEECH_CLIP) || (id >= RS64_HOOK_SONG_START && id <= RS64_HOOK_MISSION_FRAME_CAMERA);
 }
 // Hooks that are also rs64_on_* events for .nrm mods: the toml sites and the v9 host-dispatched ones, which run with a game ctx.
 constexpr bool hook_has_event(uint32_t id) {

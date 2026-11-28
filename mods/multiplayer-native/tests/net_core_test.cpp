@@ -767,14 +767,17 @@ static void test_trigger_message() {
 }
 
 static void test_tow_trip_message() {
-    const std::vector<uint8_t> b = encode_tow_trip(4, 317);
+    const float at[3] = {120.5f, -8.25f, -3300.0f};
+    const std::vector<uint8_t> b = encode_tow_trip(4, 317, at);
     CHECK(message_type(b.data(), b.size()) == (uint8_t)Msg::TowTrip);
     uint8_t e = 0;
     uint16_t item = 0;
-    CHECK(decode_tow_trip(b.data(), b.size(), &e, &item) && e == 4 && item == 317);
-    CHECK(!decode_tow_trip(b.data(), b.size() - 1, &e, &item));
+    float pos[3] = {};
+    CHECK(decode_tow_trip(b.data(), b.size(), &e, &item, &pos) && e == 4 && item == 317 && pos[0] == at[0] && pos[1] == at[1] && pos[2] == at[2]);
+    item = 9;
+    CHECK(!decode_tow_trip(b.data(), b.size() - 1, &e, &item, &pos) && item == 9);
     const std::vector<uint8_t> p = encode_pickup(4, 317);
-    CHECK(!decode_tow_trip(p.data(), p.size(), &e, &item));
+    CHECK(!decode_tow_trip(p.data(), p.size(), &e, &item, &pos));
 }
 
 static void test_hit_and_rules_messages() {
@@ -845,7 +848,8 @@ static void test_tow_seg_message() {
     st.phase = 4;
     const std::vector<uint8_t> s = encode_tow_seg(st);
     CHECK(s.size() == 7 && decode_tow_seg(s.data(), s.size(), &out) && out.index == TowSeg::kNoSegment && out.phase == 4);
-    const std::vector<uint8_t> k = encode_tow_trip(3, 94);
+    const float at[3] = {};
+    const std::vector<uint8_t> k = encode_tow_trip(3, 94, at);
     CHECK(!decode_tow_seg(k.data(), k.size(), &out));
 }
 

@@ -273,13 +273,14 @@ void sync_dat(uint8_t* rdram, recomp_context* ctx)
             continue;
         }
 
-        // A tripped walker dies from its own fall (which counts the objective); a hit on it would skip that count.
-        if ((rw(rdram, item + 0x4C) & 0x80000000u) || std::find(s.tow_in.begin(), s.tow_in.end(), d.first) != s.tow_in.end())
+        const int32_t local = dat_health(rdram, item);
+        const bool tripped = (rw(rdram, item + 0x4C) & 0x80000000u) != 0;
+
+        // A walker the other player tripped takes no mirrored damage until it is tripped here too (the trip is what downs it).
+        if (!tripped && std::find(s.tow_in.begin(), s.tow_in.end(), d.first) != s.tow_in.end())
         {
             continue;
         }
-
-        const int32_t local = dat_health(rdram, item);
 
         if (local > 0 && local > d.second && !dat_damage_safe(rdram, item))
         {
@@ -298,7 +299,8 @@ void sync_dat(uint8_t* rdram, recomp_context* ctx)
         if (local > 0 && local > d.second)
         {
             const uint32_t slot = rs64::mips::rh(rdram, item + 6);
-            const uint32_t dmg = (uint32_t)(local - d.second);
+            // A downed walker takes a reduced share of a hit, so the other player's kill on one is sent as the largest hit.
+            const uint32_t dmg = tripped && d.second <= 0 ? 0xFFFFu : (uint32_t)(local - d.second);
 
             if (slot == 0xFFFFu && d.second > 0)
             {
@@ -328,6 +330,14 @@ void sync_dat(uint8_t* rdram, recomp_context* ctx)
 
             // The item's actual health after the hit, so a damage scale other than 1 can't ratchet the two worlds down.
             s.dat_last[d.first] = dat_health(rdram, item);
+
+            // A downed walker takes a hit's damage in steps (10 a hit), so it is hit again on later frames until it reaches the other player's health.
+            const int32_t now = dat_health(rdram, item);
+
+            if (tripped && slot != 0xFFFFu && now > 0 && now > d.second && s.tow_kill_wait[d.first]++ < kTowHitFrames)
+            {
+                retry.push_back(d);
+            }
         }
     }
 
@@ -448,7 +458,7 @@ extern "C" void rs64_ghost_npc_hit(uint8_t* rdram, recomp_context* ctx)
     const uint32_t target = (uint32_t)ctx->r4 & 0xFFFFu;
 
     // A walker player is an NPC too: the other player's friendly fire on it arrives as their HIT message, not from this copy.
-    if (rh(rdram, msg + 2) == rh(rdram, kImposterRec + 0x6) && (target == rh(rdram, 0x80137DBAu) || slot_mirrored(rdram, target)))
+    if (rh(rdram, msg + 2) == rs64_imposter_slot() &&(target == rh(rdram, 0x80137DBAu) || slot_mirrored(rdram, target)))
     {
         rs64::mips::wh(rdram, msg + 6, 0);
         return;
@@ -459,7 +469,7 @@ extern "C" void rs64_ghost_npc_hit(uint8_t* rdram, recomp_context* ctx)
         return;
     }
 
-    const bool on_partner = target == rh(rdram, kImposterRec + 0x6);
+    const bool on_partner = target == rs64_imposter_slot();
 
     if (on_partner && rh(rdram, msg + 2) == rh(rdram, 0x80137DBAu)) {
         s.link.send(rs64::net::encode_hit(mission_tag(), rh(rdram, msg + 6)), true);

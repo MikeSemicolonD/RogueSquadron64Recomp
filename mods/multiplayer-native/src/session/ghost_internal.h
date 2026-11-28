@@ -64,11 +64,13 @@ void rs64_ghost_puppet_spawned(void);
 void rs64_imposter_despawn(uint8_t* rdram, recomp_context* ctx);
 bool rs64_imposter_kill(uint8_t* rdram, recomp_context* ctx);
 uint32_t rs64_imposter_npc(void);
+uint32_t rs64_imposter_slot(void);
 void rs64_ghost_tow_draw(uint8_t* rdram, recomp_context* ctx);
 void rs64_ghost_tow_load(uint8_t* rdram, recomp_context* ctx);
 void rs64_ghost_tow_release(uint8_t* rdram, recomp_context* ctx);
 void rs64_ghost_mission_init(uint8_t*, recomp_context*);
 void rs64_ghost_frame(uint8_t*, recomp_context*);
+void rs64_ghost_spectate_camera(uint8_t*, recomp_context*);
 void rs64_ghost_solo_frame(uint8_t*, recomp_context*);
 void rs64_ghost_npc_hit(uint8_t*, recomp_context*);
 void rs64_ghost_powerup_touch(uint8_t*, recomp_context*);
@@ -255,6 +257,11 @@ struct Ghost {
     uint32_t last_seq = 0;
     bool remote_in = true;
     bool remote_down = false;
+
+    // The spectated pose this frame wrote, applied again to the craft's scene node once the simulation has run.
+    bool spectate_posed = false;
+    PuppetState spectate_pose{};
+
     Vec3 remote_pos{};
     bool start_offset_done = false;
     bool puppet_seen = false;
@@ -358,6 +365,15 @@ struct Ghost {
     std::vector<uint16_t> tow_in;
     std::map<uint16_t, int> tow_retry;
     bool tow_injecting = false;
+
+    // Where each walker was when it was tripped (DAT index to map position), for both lists above.
+    std::map<uint16_t, Vec3> tow_pos;
+
+    // Extra hits sent to a downed walker to bring it to the other player's health (kTowHitFrames).
+    std::map<uint16_t, int> tow_kill_wait;
+
+    // Walkers tripped for the other player still being moved to where theirs fell (frames left, kTowMoveFrames).
+    std::map<uint16_t, int> tow_move;
 };
 
 Ghost& g();
@@ -387,6 +403,12 @@ uint8_t mission_tag();
 
 // Frames into a mission before the other player's damage, triggers and trips are applied.
 constexpr uint32_t kDamageSettleFrames = 30;
+
+// Frames a downed walker is hit again while its health is still above the other player's copy.
+constexpr int kTowHitFrames = 60;
+
+// Frames a walker tripped for the other player is moved to where theirs fell, while it settles into its downed pose.
+constexpr int kTowMoveFrames = 30;
 
 // world_sync.cpp: the host's objective state, the level's DAT items (health, mirrored damage), shared power-ups, the client's trigger volumes.
 void read_objectives(const uint8_t* rdram, rs64::net::ObjSnapshot* s);

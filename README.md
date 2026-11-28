@@ -319,6 +319,8 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 - Objects (static blue units) on radar will pop in and out when out of view of the player.
 
+- The first AT-AT seen during Imperial Ship Yard will only continue walking for as long as the player is in range and will reset it's position when the player gets far enough. (One of many cases where NPC behavior depends on player proximity)
+
 ### Roadmap
 
 - RS64 Improvements/Fixes
@@ -599,7 +601,7 @@ Here's a list of MCPs that could be useful for this project:
 
 - **[gpeter12](https://github.com/gpeter12)**: Helped to test and verify that the recomp. works on Linux Mint 22.3 - Cinnamon 64-bit in addition to testing and verifying the 'setup.sh' to improve the build process for both developers & non-developers.
 
-- **[nandologia](https://github.com/nandologia)**: Tested and verified that the recomp works in Batocera.
+- **[nandologia](https://github.com/nandologia)**: Tested and verified that the recomp works in Batocera, tested the multiplayer co-op component with Batocera and Mint together and provided fixes for segfault and black screens.
 
 ## Acknowledgements
 

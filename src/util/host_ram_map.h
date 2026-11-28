@@ -55,9 +55,9 @@
 #define RS64_HR_COOP_MOVED_A 0x80B38058u
 #define RS64_HR_COOP_MOVED_A_END 0x80B39020u
 
-// Co-op mod: imposter DAT record and message scratch (kImposterRec in mp_core.h).
+// Co-op mod: imposter DAT record, message scratch and the other player's range point (kImposterRec in mp_core.h, kRemoteRangeRef in coop_imposter.cpp).
 #define RS64_HR_COOP_SCRATCH 0x80B40000u
-#define RS64_HR_COOP_SCRATCH_END 0x80B40160u
+#define RS64_HR_COOP_SCRATCH_END 0x80B40170u
 
 // Co-op mod: relocated per-view block (kMovedRanges, delta 0x00A20000).
 #define RS64_HR_COOP_MOVED_B 0x80B58930u

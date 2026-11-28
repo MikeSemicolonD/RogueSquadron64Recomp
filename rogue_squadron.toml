@@ -1890,6 +1890,12 @@ func = "runInMissionFrame"
 before_vram = 0x800FA94C
 text = '{ if (rs64_th_runInMissionFrame_800FA94C(rdram, ctx)) return; }'
 
+# hook: RS64_HOOK_MISSION_FRAME_CAMERA
+[[patches.hook]]
+func = "runInMissionFrame"
+before_vram = 0x800FAAC4
+text = '{ rs64_th_runInMissionFrame_800FAAC4(rdram, ctx); }'
+
 # hook: RS64_HOOK_MISSION_END
 [[patches.hook]]
 func = "endMissionCleanup"
@@ -2180,6 +2186,12 @@ text = '{ if (rs64_th_npcAtStUpdate_entry(rdram, ctx)) return; }'
 [[patches.hook]]
 func = "spawnPlayerAtStCannonFire"
 text = '{ if (rs64_th_spawnPlayerAtStCannonFire_entry(rdram, ctx)) return; }'
+
+# A DAT record's unit spawns (a0 = the record), at level load or from grid streaming: co-op keeps the grid from spawning its own puppet's record, which the puppet's destroy queues again.
+# hook: RS64_HOOK_DAT_SPAWN
+[[patches.hook]]
+func = "setupNpcUpdateFunctions"
+text = '{ if (rs64_th_setupNpcUpdateFunctions_entry(rdram, ctx)) return; }'
 
 # The Y-wing (spawnTexturedExplosionBurst, its weapon tick) and the snowspeeder (tickCinematicEffectObject) fire mid-function: $v1 = the fire buttons once the cooldown is done, cleared when a fire handler skips the shot.
 [[patches.hook]]

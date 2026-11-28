@@ -17,6 +17,9 @@ struct Imposter {
     uint32_t ctx = 0;
     uint32_t blk = 0;
 
+    // The NPC slot it spawned in. Grid streaming can spawn another NPC from the same record and overwrite the record's slot field (+6), so it is never read back from there.
+    uint32_t slot = 0xFFFFu;
+
     // The wingman model the imposter spawned with (0 = X-wing, the only one with S-foil nodes).
     int model = -1;
 
@@ -197,7 +200,11 @@ extern "C" void rs64_imposter_frame(uint8_t* rdram, recomp_context* ctx)
 
     if (ship) rs64_ghost_ships()->set_puppet(rs64_ghost_puppet_ship());
 
-    const uint32_t slot = rs64::mp::call(rdram, ctx, 0x8003FFECu, {walker ? kNpcAtStUpdate : 0x800D93C0u, kImposterRec, 2u, walker ? 0x55u : 0x5Au}).v0 & 0xFFFFu;
+    // Test (ROGUESQ_MP_TEST_HOST_SOLO): the spawn and its first tick leave the game's RNG as it was, so the host's world keeps to its solo recording.
+    static const bool s_keep_rng = recomp::dbg::env_on("ROGUESQ_MP_TEST_HOST_SOLO");
+    const uint32_t rng = rw(rdram, 0x80003470u);
+
+    const uint32_t slot =rs64::mp::call(rdram, ctx, 0x8003FFECu, {walker ? kNpcAtStUpdate : 0x800D93C0u, kImposterRec, 2u, walker ? 0x55u : 0x5Au}).v0 & 0xFFFFu;
 
     if (ship) rs64_ghost_ships()->set_puppet(nullptr);
     const uint32_t table = rw(rdram, 0x80130BB0u);
@@ -229,6 +236,7 @@ extern "C" void rs64_imposter_frame(uint8_t* rdram, recomp_context* ctx)
     }
 
     rdram[(npc + 0x1A - 0x80000000u) ^ 3] += 1;
+    s.slot = slot;
     ww(rdram, kImposterRec + 0xE0, blk);
     ww(rdram, kImposterRec + 0xE4, npc);
 
@@ -245,6 +253,11 @@ extern "C" void rs64_imposter_frame(uint8_t* rdram, recomp_context* ctx)
     // Like setupNpcUpdateFunctions: one tick right after the spawn (with its dt constant) enters the wingman into its tick chains.
     ww(rdram, kImposterRec + 0xF8, rw(rdram, 0x8003BED4u));
     rs64::mp::call(rdram, ctx, 0x8003E8DCu, {slot, 3u, kImposterRec + 0xF8});
+
+    if (s_keep_rng) {
+        ww(rdram, 0x80003470u, rng);
+    }
+
     s.spawned = true;
     s.ctx = npc;
     s.blk = blk;
@@ -257,7 +270,7 @@ extern "C" void rs64_imposter_frame(uint8_t* rdram, recomp_context* ctx)
     }
 }
 
-// Drops the spawn's reference before the mission's slots are torn down; destroyNpcContextArrays spins until every slot is free, and nothing else releases a record outside the level's DAT list.
+// The spawn pins its context by holding the re-entrancy counter (+0x1A) above 0, the game's own guard while a handler runs, so the game cannot destroy it. The pin must go before the mission's slots are torn down: destroyNpcContextArrays spins until every slot is free.
 extern "C" void rs64_imposter_release(uint8_t* rdram, recomp_context* ctx)
 {
 
@@ -274,10 +287,10 @@ extern "C" void rs64_imposter_release(uint8_t* rdram, recomp_context* ctx)
         return;
     }
 
-    const uint32_t slot = rh(rdram, kImposterRec + 0x6);
+    const uint32_t slot = s.slot;
     const uint32_t table = rw(rdram, 0x80130BB0u);
 
-    if (slot != 0xFFFFu && rw(rdram, table + slot * 8) == s.ctx) {
+    if (slot < kNpcSlots && rw(rdram, table + slot * 8) == s.ctx) {
         uint8_t& refs = rdram[(s.ctx + 0x1A - 0x80000000u) ^ 3];
 
         if (refs > 0) {
@@ -296,6 +309,13 @@ extern "C" uint32_t rs64_imposter_npc(void) {
     return s.spawned ? s.ctx : 0u;
 }
 
+// The imposter's NPC slot, 0xFFFF while none is spawned.
+extern "C" uint32_t rs64_imposter_slot(void) {
+
+    const Imposter& s = imp();
+    return s.spawned && s.ctx != 0 ? s.slot : 0xFFFFu;
+}
+
 // The other player went down: a lethal HIT (action 5, weapon 7, as mirrored damage sends) through the puppet's own handler, so the game plays its death. False when there is no live slot to hit.
 extern "C" bool rs64_imposter_kill(uint8_t* rdram, recomp_context* ctx)
 {
@@ -308,7 +328,7 @@ extern "C" bool rs64_imposter_kill(uint8_t* rdram, recomp_context* ctx)
         return false;
     }
 
-    const uint32_t slot = rh(rdram, kImposterRec + 0x6);
+    const uint32_t slot = s.slot;
     const uint32_t table = rw(rdram, 0x80130BB0u);
 
     if (slot >= kNpcSlots || rw(rdram, table + slot * 8) != s.ctx)
@@ -332,7 +352,7 @@ extern "C" void rs64_imposter_despawn(uint8_t* rdram, recomp_context* ctx)
         return;
     }
 
-    const uint32_t slot = rh(rdram, kImposterRec + 0x6);
+    const uint32_t slot = s.slot;
     const uint32_t table = rw(rdram, 0x80130BB0u);
 
     if (slot < kNpcSlots && rw(rdram, table + slot * 8) == s.ctx) {
@@ -458,8 +478,7 @@ extern "C" void rs64_imposter_tick(uint8_t* rdram, recomp_context* ctx)
 
     if (imposter_fire(in.fire, &cd))
     {
-        const uint32_t slot = rh(rdram, kImposterRec + 0x6);
-        rs64::mp::call(rdram, ctx, 0x8005E3B0u, {0u, slot, blk, 0x80109730u}, {1u, rw(rdram, 0x800A5918u), 0x3F800000u});
+        rs64::mp::call(rdram, ctx, 0x8005E3B0u, {0u, s.slot, blk, 0x80109730u}, {1u, rw(rdram, 0x800A5918u), 0x3F800000u});
     }
 
     rdram[(kImposterRec + 0xF2 - 0x80000000u) ^ 3] = (uint8_t)(cd >> 8);
@@ -557,7 +576,7 @@ extern "C" bool rs64_imposter_atst_tick(uint8_t* rdram, recomp_context* ctx)
 
             const uint32_t radius = rw(rdram, blk + 0x50);
             const uint16_t owner = rh(rdram, blk + 0x72);
-            wh(rdram, blk + 0x72, rh(rdram, kImposterRec + 0x6));
+            wh(rdram, blk + 0x72, (uint16_t)s.slot);
             rs64::mp::call(rdram, ctx, 0x800D1248u, {blk, gun});
             ww(rdram, blk + 0x50, radius);
             wh(rdram, blk + 0x72, owner);
@@ -593,32 +612,61 @@ extern "C" bool rs64_imposter_atst_tick(uint8_t* rdram, recomp_context* ctx)
     return true;
 }
 
-// Both reference-point users key on player 1 only on their normal path (no cutscene byte 0x80130B39, no fixed-point flag 0x8010CA1C & 8).
-static bool imposter_extends_player_range(const uint8_t* rdram)
+// The other player's last reported position while no puppet stands for them (down, respawning, spectating): the range tests read x at +0 and z at +8.
+constexpr uint32_t kRemoteRangeRef = 0x80B40160u;
+
+// The point player 1's range tests also run around (0 for none, or off the normal path: cutscene byte 0x80130B39, fixed-point flag 0x8010CA1C & 8): the puppet's block, else the other player's last position.
+// A walker out of every player's range despawns and restarts its path (npcAtAtUpdate 0x800CE66C), so both worlds must keep the same NPCs active.
+static uint32_t range_ref(uint8_t* rdram)
 {
-    return imp().blk != 0 && rdram[(0x80130B39u - 0x80000000u) ^ 3] == 0 && (rw(rdram, 0x8010CA1Cu) & 8u) == 0;
+
+    if (rdram[(0x80130B39u - 0x80000000u) ^ 3] != 0 || (rw(rdram, 0x8010CA1Cu) & 8u) != 0)
+    {
+        return 0;
+    }
+
+    if (imp().blk != 0)
+    {
+        return imp().blk;
+    }
+
+    const rs64::ghost::Ghost& s = rs64::ghost::g();
+
+    if (!s.in_session || s.peer_left || !s.remote_in || !s.have_remote)
+    {
+        return 0;
+    }
+
+    wf(rdram, kRemoteRangeRef + 0u, s.remote_pos.x);
+    wf(rdram, kRemoteRangeRef + 4u, s.remote_pos.y);
+    wf(rdram, kRemoteRangeRef + 8u, s.remote_pos.z);
+    return kRemoteRangeRef;
 }
 
-// An NPC out of range of player 1 stays active if it is in range of the imposter, by the game's own XZ range test.
+// An NPC out of range of player 1 stays active if it is in range of the other player, by the game's own XZ range test.
 extern "C" void rs64_imposter_activation(uint8_t* rdram, recomp_context* ctx, uint32_t npc_point)
 {
 
-    if (!imposter_extends_player_range(rdram) || (uint32_t)ctx->r2 != 0)
+    const uint32_t ref = range_ref(rdram);
+
+    if (!ref || (uint32_t)ctx->r2 != 0)
     {
         return;
     }
 
-    ctx->r2 = (gpr)(int32_t)rs64::mp::call(rdram, ctx, 0x80047DACu, {imp().blk, npc_point}).v0;
+    ctx->r2 = (gpr)(int32_t)rs64::mp::call(rdram, ctx, 0x80047DACu, {ref, npc_point}).v0;
 }
 
-// Grid streaming is stateless per call: run it a second time around the imposter.
+// Grid streaming is stateless per call: run it a second time around the other player.
 extern "C" void rs64_imposter_stream(uint8_t* rdram, recomp_context* ctx)
 {
 
-    if (!imposter_extends_player_range(rdram))
+    const uint32_t ref = range_ref(rdram);
+
+    if (!ref)
     {
         return;
     }
 
-    rs64::mp::call(rdram, ctx, 0x80047368u, {imp().blk});
+    rs64::mp::call(rdram, ctx, 0x80047368u, {ref});
 }

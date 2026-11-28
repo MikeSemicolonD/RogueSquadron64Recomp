@@ -143,9 +143,9 @@ bool decode_trigger(const uint8_t* data, size_t n, uint8_t* epoch, uint16_t* eve
 std::vector<uint8_t> encode_shot(uint8_t epoch, const std::string& camera, const std::string& trigger);
 bool decode_shot(const uint8_t* data, size_t n, uint8_t* epoch, std::string* camera, std::string* trigger);
 
-// Ghost co-op, reliable: a player's tow cable tripped the walker with this DAT item index; the other side trips its own copy.
-std::vector<uint8_t> encode_tow_trip(uint8_t epoch, uint16_t item);
-bool decode_tow_trip(const uint8_t* data, size_t n, uint8_t* epoch, uint16_t* item);
+// Ghost co-op, reliable: a player's tow cable tripped the walker with this DAT item index at pos (map space); the other side moves its own copy there and trips it.
+std::vector<uint8_t> encode_tow_trip(uint8_t epoch, uint16_t item, const float (&pos)[3]);
+bool decode_tow_trip(const uint8_t* data, size_t n, uint8_t* epoch, uint16_t* item, float (*pos)[3]);
 
 // Ghost co-op, reliable: friendly fire, the damage this player's shot did to the other player's ship (the receiver applies it to its own craft).
 std::vector<uint8_t> encode_hit(uint8_t epoch, uint16_t damage);

@@ -1368,6 +1368,24 @@ extern "C" float rs64_rate_frame(uint8_t* rdram, float dt)
     return dt;
 }
 
+// ROGUESQ_LOG_DAT_SPAWN: each DAT record's unit spawn (load and grid streaming, including a destroyed unit's record queued again), with its +0x4C flags (bit 31 set once tripped or dead).
+extern "C" void rs64_log_dat_spawn(uint8_t* rdram, uint32_t record)
+{
+
+    static const bool s_on = recomp::dbg::env_on("ROGUESQ_LOG_DAT_SPAWN");
+
+    if (!s_on)
+    {
+        return;
+    }
+
+    using rs64::mips::rh;
+    using rs64::mips::rf;
+
+    fprintf(stderr, "[dat-spawn] rec %08X type %04X slot %04X flags %08X at %.1f,%.1f,%.1f\n", record, rh(rdram, record), rh(rdram, record + 6u), rw(rdram, record + 0x4Cu),
+        rf(rdram, record + 0x10u), rf(rdram, record + 0x14u), rf(rdram, record + 0x18u));
+}
+
 // A player's A/START ended the crawl (the toml hook at the game's skip branch): the host flag counts them, which co-op reads.
 extern "C" void rs64_scene_skipped(const char* flag)
 {

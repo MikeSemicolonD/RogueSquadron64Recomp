@@ -736,11 +736,24 @@ bool decode_pickup(const uint8_t* data, size_t n, uint8_t* epoch, uint16_t* item
     return decode_fields(data, n, Msg::Pickup, epoch, item);
 }
 
-std::vector<uint8_t> encode_tow_trip(uint8_t epoch, uint16_t item) { return encode_fields(Msg::TowTrip, epoch, item); }
+std::vector<uint8_t> encode_tow_trip(uint8_t epoch, uint16_t item, const float (&pos)[3]) { return encode_fields(Msg::TowTrip, epoch, item, pos); }
 
-bool decode_tow_trip(const uint8_t* data, size_t n, uint8_t* epoch, uint16_t* item)
+bool decode_tow_trip(const uint8_t* data, size_t n, uint8_t* epoch, uint16_t* item, float (*pos)[3])
 {
-    return decode_fields(data, n, Msg::TowTrip, epoch, item);
+
+    uint8_t e = 0;
+    uint16_t i = 0;
+    float p[3] = {};
+
+    if (!read_fields(data, n, Msg::TowTrip, &e, &i, &p))
+    {
+        return false;
+    }
+
+    *epoch = e;
+    *item = i;
+    std::memcpy(*pos, p, sizeof p);
+    return true;
 }
 
 std::vector<uint8_t> encode_hit(uint8_t epoch, uint16_t damage) { return encode_fields(Msg::Hit, epoch, damage); }

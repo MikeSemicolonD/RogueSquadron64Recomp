@@ -202,6 +202,7 @@ int rs64_th_tickSongFadeTimer_800EE82C(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_requestSpeechResponseMode2_800FBB08(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_requestSpeechResponseMode1_800FBB64(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_runInMissionFrame_800FA94C(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_runInMissionFrame_800FAAC4(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_endMissionCleanup_800FB9E4(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_requestMissionTransitionMode_800FB190(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_runInMissionFrame_800FA8E4(uint8_t* rdram, recomp_context* ctx);
@@ -253,6 +254,7 @@ void rs64_th_tickCinematicEffectObject_800AC884(uint8_t* rdram, recomp_context* 
 void rs64_th_setupCameraMatrices_entry(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_npcAtStUpdate_entry(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_spawnPlayerAtStCannonFire_entry(uint8_t* rdram, recomp_context* ctx);
+int rs64_th_setupNpcUpdateFunctions_entry(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_mainGameLoop_8003E424(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_mainGameLoop_8003E444(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_applyPlayerSlotAnimChannelKeyframe_800B1FD4(uint8_t* rdram, recomp_context* ctx);
@@ -377,6 +379,7 @@ void rs64_th_setViewStateBytesAndFadeScale_entry(uint8_t* rdram, recomp_context*
 void rs64_th_cinematicSplineWalkerNpcHandler_8005C2F0(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_updateWalkerParticlePositions_entry(uint8_t* rdram, recomp_context* ctx);
 void rs64_env_level_load(uint8_t* rdram, float game_frac);
+void rs64_log_dat_spawn(uint8_t* rdram, uint32_t record);
 void rs64_env_fog_color(recomp_context* ctx);
 void rs64_env_flight_bounds(uint8_t* rdram);
 void rs64_th_loadPlayerStartPosition_800B0060(uint8_t* rdram, recomp_context* ctx);
