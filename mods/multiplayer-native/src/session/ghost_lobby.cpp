@@ -1312,6 +1312,9 @@ bool mp_menus() {
 // What each screen's status slot shows (cleared when the screen re-creates its fonts).
 static std::string s_ms_shown, s_cs_shown;
 
+// Whether the screen on show was built with its status slot: only a screen built in a session has one.
+static bool s_ms_slot = false, s_cs_slot = false;
+
 // A status line on a screen font's extra slot (the screen's fontAlloc hook adds it in a session): setFontTextSlot(font, str, slot, x = -0x100 centred, y), alpha 0x80061C74. Callers use y = -0x7C on mission select (just under the title, above the hologram) and -0x70 on craft select (under its hint line).
 void show_status(uint8_t* rdram, recomp_context* ctx, uint32_t font, uint32_t slot, int y, const std::string& text, std::string* shown)
 {
@@ -1403,7 +1406,7 @@ extern "C" void rs64_lobby_mission_select_init(uint8_t* rdram, recomp_context* c
 constexpr int64_t kLeftNoticeMs = 1500;
 constexpr int64_t kLeftExitMs = 8000;
 
-static bool partner_left_exit(uint8_t* rdram, recomp_context* ctx, uint32_t pressed, uint32_t font, uint32_t slot, int y, std::string* shown)
+static bool partner_left_exit(uint8_t* rdram, recomp_context* ctx, uint32_t pressed, bool has_slot, uint32_t font, uint32_t slot, int y, std::string* shown)
 {
 
     Ghost& s = g();
@@ -1420,7 +1423,10 @@ static bool partner_left_exit(uint8_t* rdram, recomp_context* ctx, uint32_t pres
         return false;
     }
 
-    show_status(rdram, ctx, font, slot, y, s.partner_left_text, shown);
+    // A partner who left while the screen was loading leaves no slot to write the notice into; writing there crashes. The screen still backs out.
+    if (has_slot) {
+        show_status(rdram, ctx, font, slot, y, s.partner_left_text, shown);
+    }
 
     uint32_t p = 0;
 
@@ -1436,7 +1442,9 @@ static bool partner_left_exit(uint8_t* rdram, recomp_context* ctx, uint32_t pres
 // The level select's font 2 gets a third slot for the status line (fontAlloc at 0x800AF0D0, a2 = slot count).
 extern "C" void rs64_lobby_mission_select_fonts(recomp_context* ctx) {
 
-    if (mp_menus())
+    s_ms_slot = mp_menus();
+
+    if (s_ms_slot)
     {
         ctx->r6 = 3;
 
@@ -1457,7 +1465,7 @@ extern "C" void rs64_lobby_mission_select_tick(uint8_t* rdram, recomp_context* c
         drain();
     }
 
-    if (partner_left_exit(rdram, ctx, 0x8013A960u + 4u * rb(rdram, 0x800CDAC8u), 2, 2, -0x7C, &shown))
+    if (partner_left_exit(rdram, ctx, 0x8013A960u + 4u * rb(rdram, 0x800CDAC8u), s_ms_slot, 2, 2, -0x7C, &shown))
     {
         return;
     }
@@ -1676,6 +1684,8 @@ extern "C" int rs64_ghost_puppet_model(void) {
 // Craft select init: font 2 gets a fourth slot for the status line (fontAlloc at 0x800AAC44, a2 = slot count), and this player has not picked yet.
 extern "C" void rs64_lobby_craft_select_init(recomp_context* ctx) {
 
+    s_cs_slot = false;
+
     Ghost& s = g();
 
     if (!mp_menus())
@@ -1684,6 +1694,7 @@ extern "C" void rs64_lobby_craft_select_init(recomp_context* ctx) {
     }
 
     ctx->r6 = 4;
+    s_cs_slot = true;
     s.skip_tag = (uint16_t)((s.skip_tag & 0xFF00u) + 0x100u);
     s.crawl_over = false;
     s.craft.back();
@@ -1706,7 +1717,7 @@ extern "C" void rs64_lobby_craft_select_tick(uint8_t* rdram, recomp_context* ctx
         drain();
     }
 
-    if (partner_left_exit(rdram, ctx, 0x8013A960u + 4u * rb(rdram, 0x800CD6D0u), 2, 3, -0x70, &shown))
+    if (partner_left_exit(rdram, ctx, 0x8013A960u + 4u * rb(rdram, 0x800CD6D0u), s_cs_slot, 2, 3, -0x70, &shown))
     {
         return;
     }
